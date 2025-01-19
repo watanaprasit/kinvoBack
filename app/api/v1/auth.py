@@ -1,24 +1,102 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 from ...schemas.user import UserCreate, UserLogin, Token, UserResponse
 from ...core.config import settings
 from ...core.security import create_access_token, get_password_hash, verify_password
+import httpx
+from pydantic import BaseModel
+import random
+import string
+
+class GoogleTokenRequest(BaseModel):
+    id_token: str
 
 router = APIRouter()
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
+async def validate_google_oauth_token(id_token: str) -> dict:
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={id_token}")
+            response_data = response.json()
+
+            if response.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Google token validation failed: {response_data.get('error_description', 'Unknown error')}")
+
+            return response_data
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Token validation failed: {str(e)}")
+
+
+def generate_random_password(length=8):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+
+@router.post("/google/callback")
+async def google_callback(token_request: GoogleTokenRequest):
+    try:
+        # Validate the ID token and get user info from Google
+        user_data = await validate_google_oauth_token(token_request.id_token)
+
+        if not user_data.get("email"):
+            raise HTTPException(status_code=400, detail="Email not found in token")
+
+        # Check if user exists in Supabase
+        result = supabase.table("users").select("*").eq("email", user_data["email"]).execute()
+
+        if result.data:
+            user = result.data[0]
+        else:
+            # Generate a random password for OAuth user
+            random_password = generate_random_password()
+
+            # Sign up with the random password
+            auth_user = supabase.auth.sign_up({
+                "email": user_data["email"],
+                "password": random_password,  # Use a temporary password
+            })
+
+            # Check if user was created successfully
+            if hasattr(auth_user, 'user'):
+                user = auth_user.user
+            else:
+                raise HTTPException(status_code=400, detail="Error creating user in Supabase Auth")
+
+            # Insert user into the custom table (no password)
+            new_user = {
+                "email": user_data["email"],
+                "full_name": user_data.get("name", ""),
+                "hashed_password": ""  # No password for OAuth users
+            }
+
+            result = supabase.table("users").insert(new_user).execute()
+            if not result.data:
+                raise HTTPException(status_code=400, detail="Failed to create user in custom users table")
+
+            user = result.data[0]
+
+        # Create access token
+        access_token = create_access_token(data={"sub": user["email"]})
+        return {"access_token": access_token, "token_type": "bearer"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+
+
 @router.post("/register", response_model=UserResponse)
 async def register(user: UserCreate):
     try:
-    
-        # Fetch users from Supabase Auth
+        # Check if the email already exists in Supabase
         users_response = supabase.auth.admin.list_users()
 
-        # Check if the response is a list (as the response is not a dictionary with a 'users' key)
         if not isinstance(users_response, list):
             raise HTTPException(status_code=500, detail="Unable to fetch users from Supabase Auth")
 
-        # Check if the email already exists in the Supabase Auth users list
         existing_user = next((u for u in users_response if u.user_metadata.get('email') == user.email), None)
 
         if existing_user:
@@ -30,11 +108,10 @@ async def register(user: UserCreate):
             "password": user.password
         })
 
-        # Check if user was successfully created in Supabase Auth
         if not auth_user.user:
             raise HTTPException(status_code=400, detail="Error creating user in Supabase Auth")
 
-        # Create new user record in your custom users table
+        # Hash the password and store user data in the custom table
         hashed_password = get_password_hash(user.password)
         new_user = {
             "email": user.email,
@@ -42,15 +119,13 @@ async def register(user: UserCreate):
             "hashed_password": hashed_password
         }
 
-        # Insert user data into your custom users table
         result = supabase.table("users").insert(new_user).execute()
 
-        # Return the user information from the custom table
         if result.data and isinstance(result.data, list):
             return result.data[0]
         else:
             raise HTTPException(status_code=400, detail="Error inserting user into custom users table")
-        
+
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -62,22 +137,15 @@ async def login(user_credentials: UserLogin):
         result = supabase.table("users").select("*").eq("email", user_credentials.email).execute()
 
         if not result.data:
-            raise HTTPException(
-                status_code=401,
-                detail="Incorrect email or password"
-            )
+            raise HTTPException(status_code=401, detail="Incorrect email or password")
 
         user = result.data[0]
         if not verify_password(user_credentials.password, user["hashed_password"]):
-            raise HTTPException(
-                status_code=401,
-                detail="Incorrect email or password"
-            )
+            raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-        access_token = create_access_token(
-            data={"sub": user["email"]}
-        )
+        access_token = create_access_token(data={"sub": user["email"]})
 
         return {"access_token": access_token, "token_type": "bearer"}
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .api.v1 import auth
 from .core.config import settings
+from fastapi import Request
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -18,7 +20,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include the routes for authentication
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+
 
 if __name__ == "__main__":
     import uvicorn
