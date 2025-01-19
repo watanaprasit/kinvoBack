@@ -44,31 +44,31 @@ async def google_callback(token_request: GoogleTokenRequest):
         if not user_data.get("email"):
             raise HTTPException(status_code=400, detail="Email not found in token")
 
-        # Check if user exists in Supabase
+        # Check if user exists in Supabase users table
         result = supabase.table("users").select("*").eq("email", user_data["email"]).execute()
 
         if result.data:
-            user = result.data[0]
+            user = result.data[0]  # Existing user found
         else:
-            # Generate a random password for OAuth user
+            # User does not exist, create new user with a random password
             random_password = generate_random_password()
 
-            # Sign up with the random password
+            # Sign up the user with the random password
             auth_user = supabase.auth.sign_up({
                 "email": user_data["email"],
-                "password": random_password,  # Use a temporary password
+                "password": random_password,  # Temporary password for OAuth user
             })
 
-            # Check if user was created successfully
+            # Check if user was successfully created
             if hasattr(auth_user, 'user'):
                 user = auth_user.user
             else:
                 raise HTTPException(status_code=400, detail="Error creating user in Supabase Auth")
 
-            # Insert user into the custom table (no password)
+            # Insert the user into the custom table (no password stored here)
             new_user = {
                 "email": user_data["email"],
-                "full_name": user_data.get("name", ""),
+                "full_name": user_data.get("name", ""),  # Full name from Google OAuth
                 "hashed_password": ""  # No password for OAuth users
             }
 
@@ -76,14 +76,18 @@ async def google_callback(token_request: GoogleTokenRequest):
             if not result.data:
                 raise HTTPException(status_code=400, detail="Failed to create user in custom users table")
 
-            user = result.data[0]
+            user = result.data[0]  # Get the newly inserted user data
 
-        # Create access token
+        # Create an access token for the user
         access_token = create_access_token(data={"sub": user["email"]})
-        return {"access_token": access_token, "token_type": "bearer"}
 
-    except HTTPException:
-        raise
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+        }
+
+    except HTTPException as http_error:
+        raise http_error  # Reraise HTTP exceptions to return the proper status code
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
 
@@ -149,3 +153,4 @@ async def login(user_credentials: UserLogin):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
