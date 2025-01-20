@@ -8,6 +8,8 @@ import httpx
 from pydantic import BaseModel
 import random
 import string
+from datetime import datetime
+
 
 class GoogleTokenRequest(BaseModel):
     id_token: str
@@ -105,6 +107,12 @@ async def register(user: UserCreate):
 
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
+        
+        # Check if slug is already taken
+        if user.slug:
+            slug_check = supabase.table("users").select("id").eq("slug", user.slug).execute()
+            if slug_check.data:
+                raise HTTPException(status_code=400, detail="Slug already taken")
 
         # Register the user in Supabase Auth using correct method
         auth_user = supabase.auth.sign_up({
@@ -117,12 +125,17 @@ async def register(user: UserCreate):
 
         # Hash the password and store user data in the custom table
         hashed_password = get_password_hash(user.password)
+        current_time = datetime.utcnow().isoformat()  # Convert datetime to string
         new_user = {
             "email": user.email,
             "full_name": user.full_name,
-            "hashed_password": hashed_password
+            "hashed_password": hashed_password,
+            "slug": user.slug,  # Add the slug field here
+            "created_at": current_time,  # ISO 8601 string
+            "updated_at": current_time  # ISO 8601 string
         }
 
+        # Insert the user into Supabase table
         result = supabase.table("users").insert(new_user).execute()
 
         if result.data and isinstance(result.data, list):
@@ -153,4 +166,5 @@ async def login(user_credentials: UserLogin):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from .api.v1 import auth
+from .api.v1 import auth, users
 from .core.config import settings
 from fastapi import Request
 
@@ -22,6 +22,8 @@ app.add_middleware(
 
 # Include the routes for authentication
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+
 
 
 if __name__ == "__main__":
