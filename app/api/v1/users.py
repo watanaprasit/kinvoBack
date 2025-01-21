@@ -43,3 +43,12 @@ async def update_user_slug(
         raise HTTPException(status_code=400, detail=str(e))
     except IntegrityError:
         raise HTTPException(status_code=400, detail="Slug already taken")
+    
+    
+@router.get("/check-slug/{slug}")
+async def check_slug_availability(slug: str):
+    try:
+        is_available = await UserService.check_slug_availability(slug)
+        return {"available": is_available}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

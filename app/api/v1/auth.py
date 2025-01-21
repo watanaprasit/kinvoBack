@@ -4,6 +4,7 @@ from supabase import create_client, Client
 from ...schemas.user import UserCreate, UserLogin, Token, UserResponse
 from ...core.config import settings
 from ...core.security import create_access_token, get_password_hash, verify_password
+from ...services.user import UserService
 import httpx
 from pydantic import BaseModel
 import random
@@ -13,6 +14,7 @@ from datetime import datetime
 
 class GoogleTokenRequest(BaseModel):
     id_token: str
+    slug: str = None  # Add slug field for Google signup
 
 router = APIRouter()
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
@@ -32,7 +34,6 @@ async def validate_google_oauth_token(id_token: str) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Token validation failed: {str(e)}")
 
-
 def generate_random_password(length=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
@@ -46,11 +47,20 @@ async def google_callback(token_request: GoogleTokenRequest):
         if not user_data.get("email"):
             raise HTTPException(status_code=400, detail="Email not found in token")
 
-        # Check if user exists in Supabase users table
-        result = supabase.table("users").select("*").eq("email", user_data["email"]).execute()
+        # Check if user exists in Supabase users table by email or google_id
+        result = supabase.table("users").select("*").or_(
+            f"email.eq.{user_data['email']},google_id.eq.{user_data.get('sub')}"
+        ).execute()
 
         if result.data:
             user = result.data[0]  # Existing user found
+            
+            # Update google_id if not set
+            if not user.get("google_id"):
+                supabase.table("users").update({
+                    "google_id": user_data.get("sub"),
+                    "updated_at": datetime.utcnow().isoformat()
+                }).eq("id", user["id"]).execute()
         else:
             # User does not exist, create new user with a random password
             random_password = generate_random_password()
@@ -58,27 +68,33 @@ async def google_callback(token_request: GoogleTokenRequest):
             # Sign up the user with the random password
             auth_user = supabase.auth.sign_up({
                 "email": user_data["email"],
-                "password": random_password,  # Temporary password for OAuth user
+                "password": random_password,
             })
 
-            # Check if user was successfully created
-            if hasattr(auth_user, 'user'):
-                user = auth_user.user
-            else:
+            if not hasattr(auth_user, 'user'):
                 raise HTTPException(status_code=400, detail="Error creating user in Supabase Auth")
 
-            # Insert the user into the custom table (no password stored here)
+            current_time = datetime.utcnow().isoformat()
             new_user = {
                 "email": user_data["email"],
-                "full_name": user_data.get("name", ""),  # Full name from Google OAuth
-                "hashed_password": ""  # No password for OAuth users
+                "full_name": user_data.get("name", ""),
+                "hashed_password": "",  # No password for OAuth users
+                "google_id": user_data.get("sub"),  # Store Google's user ID
+                "created_at": current_time,
+                "updated_at": current_time
             }
+
+            if token_request.slug:
+                # Check if slug is available
+                slug_check = supabase.table("users").select("id").eq("slug", token_request.slug).execute()
+                if not slug_check.data:
+                    new_user["slug"] = token_request.slug
 
             result = supabase.table("users").insert(new_user).execute()
             if not result.data:
                 raise HTTPException(status_code=400, detail="Failed to create user in custom users table")
 
-            user = result.data[0]  # Get the newly inserted user data
+            user = result.data[0]
 
         # Create an access token for the user
         access_token = create_access_token(data={"sub": user["email"]})
@@ -86,10 +102,15 @@ async def google_callback(token_request: GoogleTokenRequest):
         return {
             "access_token": access_token,
             "token_type": "bearer",
+            "user": {
+                "email": user["email"],
+                "full_name": user["full_name"],
+                "slug": user.get("slug")
+            }
         }
 
     except HTTPException as http_error:
-        raise http_error  # Reraise HTTP exceptions to return the proper status code
+        raise http_error
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
 
