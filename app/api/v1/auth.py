@@ -10,11 +10,20 @@ from pydantic import BaseModel
 import random
 import string
 from datetime import datetime
+from typing import Optional
 
 
 class GoogleTokenRequest(BaseModel):
     id_token: str
-    slug: str = None  # Add slug field for Google signup
+    slug: Optional[str] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+                "slug": "user-slug"
+            }
+        }
 
 router = APIRouter()
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
@@ -41,78 +50,110 @@ def generate_random_password(length=8):
 @router.post("/google/callback")
 async def google_callback(token_request: GoogleTokenRequest):
     try:
+        # Add detailed logging
+        print("=== Debug Info ===")
+        print(f"Token Request: {token_request}")
+        
         # Validate the ID token and get user info from Google
         user_data = await validate_google_oauth_token(token_request.id_token)
+        print(f"Validated Google User Data: {user_data}")
 
         if not user_data.get("email"):
-            raise HTTPException(status_code=400, detail="Email not found in token")
+            raise HTTPException(
+                status_code=422, 
+                detail={"message": "Email not found in token", "code": "INVALID_TOKEN"}
+            )
 
-        # Check if user exists in Supabase users table by email or google_id
-        result = supabase.table("users").select("*").or_(
-            f"email.eq.{user_data['email']},google_id.eq.{user_data.get('sub')}"
-        ).execute()
+        # Check if user already exists
+        existing_user = supabase.table("users").select("*").eq("email", user_data["email"]).execute()
+        
+        if existing_user.data:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "User already exists", "code": "USER_EXISTS"}
+            )
 
-        if result.data:
-            user = result.data[0]  # Existing user found
-            
-            # Update google_id if not set
-            if not user.get("google_id"):
-                supabase.table("users").update({
-                    "google_id": user_data.get("sub"),
-                    "updated_at": datetime.utcnow().isoformat()
-                }).eq("id", user["id"]).execute()
-        else:
-            # User does not exist, create new user with a random password
-            random_password = generate_random_password()
-
-            # Sign up the user with the random password
-            auth_user = supabase.auth.sign_up({
+        # If no slug provided, just validate and return user info
+        if not token_request.slug:
+            return {
                 "email": user_data["email"],
-                "password": random_password,
-            })
-
-            if not hasattr(auth_user, 'user'):
-                raise HTTPException(status_code=400, detail="Error creating user in Supabase Auth")
-
-            current_time = datetime.utcnow().isoformat()
-            new_user = {
-                "email": user_data["email"],
-                "full_name": user_data.get("name", ""),
-                "hashed_password": "",  # No password for OAuth users
-                "google_id": user_data.get("sub"),  # Store Google's user ID
-                "created_at": current_time,
-                "updated_at": current_time
+                "name": user_data.get("name", ""),
+                "success": True,
+                "idToken": token_request.id_token  # Return the token for the second step
             }
 
-            if token_request.slug:
-                # Check if slug is available
-                slug_check = supabase.table("users").select("id").eq("slug", token_request.slug).execute()
-                if not slug_check.data:
-                    new_user["slug"] = token_request.slug
+        # If we have a slug, proceed with user creation
+        random_password = generate_random_password()
+        
+        # Create user in Supabase Auth
+        auth_user = supabase.auth.sign_up({
+            "email": user_data["email"],
+            "password": random_password,
+            "options": {
+                "data": {
+                    "full_name": user_data.get("name", ""),
+                    "google_id": user_data.get("sub")
+                }
+            }
+        })
 
-            result = supabase.table("users").insert(new_user).execute()
-            if not result.data:
-                raise HTTPException(status_code=400, detail="Failed to create user in custom users table")
+        if not auth_user.user:
+            raise HTTPException(status_code=400, detail="Error creating user in Supabase Auth")
 
-            user = result.data[0]
+        # Create user in custom table
+        current_time = datetime.utcnow().isoformat()
+        new_user = {
+            "email": user_data["email"],
+            "full_name": user_data.get("name", ""),
+            "google_id": user_data.get("sub"),
+            "slug": token_request.slug,
+            "created_at": current_time,
+            "updated_at": current_time
+        }
 
-        # Create an access token for the user
+        result = supabase.table("users").insert(new_user).execute()
+        
+        if not result.data:
+            # Rollback auth user creation if custom table insert fails
+            # You might want to add code here to delete the auth user
+            raise HTTPException(status_code=400, detail="Failed to create user profile")
+
+        user = result.data[0]
         access_token = create_access_token(data={"sub": user["email"]})
 
         return {
+            "success": True,
+            "isComplete": True,
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
                 "email": user["email"],
                 "full_name": user["full_name"],
-                "slug": user.get("slug")
+                "slug": user["slug"]
             }
         }
-
     except HTTPException as http_error:
-        raise http_error
+        return JSONResponse(
+            status_code=http_error.status_code,
+            content={
+                "success": False,
+                "error": {
+                    "code": http_error.detail.get("code", "UNKNOWN_ERROR"),
+                    "message": http_error.detail.get("message", str(http_error.detail))
+                }
+            }
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": str(e)
+                }
+            }
+        )
 
 
 @router.post("/register", response_model=UserResponse)
