@@ -2,6 +2,26 @@ from pydantic import BaseModel, EmailStr, constr
 from typing import Optional
 from datetime import datetime
 
+class UserProfileBase(BaseModel):
+    display_name: Optional[str] = None
+    slug: Optional[constr(min_length=3, max_length=50, pattern=r'^[a-z0-9-]+$')] = None
+    photo_url: Optional[str] = None
+
+class UserProfileCreate(UserProfileBase):
+    user_id: Optional[str] = None
+
+class UserProfileUpdate(UserProfileBase):
+    pass
+
+class UserProfile(UserProfileBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
