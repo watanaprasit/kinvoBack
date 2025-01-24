@@ -8,8 +8,12 @@ class UserProfileBase(BaseModel):
     slug: Optional[constr(min_length=3, max_length=50, pattern=r'^[a-z0-9-]+$')] = None
     photo_url: Optional[str] = None
 
-class UserProfileCreate(UserProfileBase):
-    user_id: Union[int, str, UUID] = None
+class UserProfileCreate(BaseModel):
+    id: Optional[int] = None
+    user_id: int
+    display_name: str
+    slug: str
+    photo_url: Optional[str] = None
 
 class UserProfileUpdate(UserProfileBase):
     pass

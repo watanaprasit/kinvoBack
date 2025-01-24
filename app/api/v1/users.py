@@ -80,22 +80,41 @@ async def update_user_profile(
         raise HTTPException(status_code=404, detail="User profile not found")
     return user_profile
 
-@router.post("/me/profile", response_model=UserProfile)
-async def create_user_profile(
-    profile_data: UserProfileCreate,
-    current_user = Depends(get_current_user)
-):
-    user = UserService.get_user_by_id(current_user.id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+
+@router.post("/profile", response_model=UserProfile)
+async def create_user_profile(profile_data: UserProfileCreate):
+    try:
+        user_profile = await UserProfileService.create_profile(
+            user_id=profile_data.user_id,  # Pass user_id from the input data
+            profile_data=profile_data,
+            profile_id=profile_data.id  # Optional: pass ID if provided
+        )
+        
+        if not user_profile:
+            raise HTTPException(status_code=500, detail="Failed to create user profile")
+        
+        return user_profile
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# with authentication
+# @router.post("/me/profile", response_model=UserProfile)
+# async def create_user_profile(
+#     profile_data: UserProfileCreate,
+#     current_user = Depends(get_current_user)
+# ):
+#     user = UserService.get_user_by_id(current_user.id)
+#     if not user:
+#         raise HTTPException(status_code=404, detail="User not found")
     
-    user_profile = await UserProfileService.create_profile(
-        user_id=str(current_user.id),
-        profile_data=profile_data
-    )
+#     user_profile = await UserProfileService.create_profile(
+#         user_id=str(current_user.id),
+#         profile_data=profile_data
+#     )
     
-    if not user_profile:
-        raise HTTPException(status_code=500, detail="Failed to create user profile")
+#     if not user_profile:
+#         raise HTTPException(status_code=500, detail="Failed to create user profile")
     
-    return user_profile
+#     return user_profile
 

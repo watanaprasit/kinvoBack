@@ -37,27 +37,23 @@ class UserProfileService:
         # Get public URL
         return supabase.storage().from_(bucket_name).get_public_url(file_name)
 
+
     @staticmethod
-    async def create_profile(user_id: str, profile_data: UserProfileCreate) -> Dict[str, Any]:
+    async def create_profile(user_id: int, profile_data: UserProfileCreate, profile_id: Optional[int] = None) -> Dict[str, Any]:
         supabase = get_supabase()
         
-        # Generate a new UUID for the profile
-        profile_uuid = str(uuid.uuid4())
-        
-        # Prepare insert data
         insert_data = {
-            "id": profile_uuid,
+            "id": profile_id,
             "user_id": user_id,
             "display_name": profile_data.display_name,
             "slug": profile_data.slug,
             "photo_url": profile_data.photo_url,
-            "created_at": "now()",
-            "updated_at": "now()"
         }
         
         # Remove None values
         insert_data = {k: v for k, v in insert_data.items() if v is not None}
         
+        # Use .execute() and return first data item
         result = await supabase.table("user_profiles").insert(insert_data).execute()
         
         return result.data[0] if result.data else None
