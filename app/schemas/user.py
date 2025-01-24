@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, constr
-from typing import Optional
+from pydantic import BaseModel, EmailStr, constr, Field
+from typing import Optional, Union
 from datetime import datetime
+from uuid import UUID
 
 class UserProfileBase(BaseModel):
     display_name: Optional[str] = None
@@ -8,14 +9,14 @@ class UserProfileBase(BaseModel):
     photo_url: Optional[str] = None
 
 class UserProfileCreate(UserProfileBase):
-    user_id: Optional[str] = None
+    user_id: Union[int, str, UUID] = None
 
 class UserProfileUpdate(UserProfileBase):
     pass
 
 class UserProfile(UserProfileBase):
-    id: str
-    user_id: str
+    id: Union[int, str, UUID]
+    user_id: Union[int, str, UUID]
     created_at: datetime
     updated_at: datetime
 

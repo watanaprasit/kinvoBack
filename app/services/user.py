@@ -36,7 +36,7 @@ class UserService:
         return result.data[0] if result.data else None
     
     @staticmethod
-    async def get_user_by_id(user_id: str):
+    def get_user_by_id(user_id: str):
         supabase = get_supabase()
-        result = await supabase.table("auth.users").select("*").eq("id", user_id).execute()
+        result = supabase.from_("users").select("*").eq("id", user_id).execute()
         return result.data[0] if result.data else None
