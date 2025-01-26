@@ -1,6 +1,7 @@
 from app.db.session import get_supabase
 import re
 from typing import Optional, Dict, Any
+from fastapi import HTTPException
 
 class UserService:
     @staticmethod
@@ -39,3 +40,13 @@ class UserService:
         supabase = get_supabase()
         result = supabase.from_("users").select("*").eq("id", user_id).execute()
         return result.data[0] if result.data else None
+    
+    @staticmethod
+    async def get_current_user_by_token(token: str) -> Dict[str, Any]:
+        supabase = get_supabase()
+        result = supabase.table("users").select("*").eq("email", token).single().execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        return result.data

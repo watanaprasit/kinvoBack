@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Body, Request
 from sqlalchemy.exc import IntegrityError
 # from app.schemas.user.user import UserResponse, UserProfile, UserProfileCreate, UserProfileUpdate
 from app.schemas.user.profile import UserProfile, UserProfileCreate, UserProfileUpdate
@@ -69,18 +69,26 @@ async def get_user_profile(user_id: int):
 
 @router.put("/me/profile", response_model=UserProfile)
 async def update_user_profile(
-    profile_data: UserProfileUpdate,
+    request: Request,
     photo: UploadFile = File(None),
     current_user=Depends(get_current_user)
 ):
-    user_profile = await UserProfileService.update_profile(
-        user_id=str(current_user.id),
-        profile_data=profile_data,
-        photo=photo
-    )
-    if not user_profile:
-        raise HTTPException(status_code=404, detail="User profile not found")
-    return user_profile
+    # Parse request body manually
+    body = await request.json()
+    profile_data = UserProfileUpdate(**body)
+    
+    try:
+        user_profile = await UserProfileService.update_profile(
+            user_id=str(current_user.id),
+            profile_data=profile_data,
+            photo=photo,
+            current_user=current_user
+        )
+        return user_profile
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/profile", response_model=UserProfile)

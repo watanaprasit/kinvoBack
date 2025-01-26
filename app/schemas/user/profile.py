@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Union
 from datetime import datetime
 from uuid import UUID
@@ -15,8 +15,20 @@ class UserProfileCreate(BaseModel):
     slug: str
     photo_url: Optional[str] = None
 
-class UserProfileUpdate(UserProfileBase):
-    pass
+class UserProfileUpdate(BaseModel):
+    display_name: Optional[str] = Field(default=None)
+    slug: Optional[str] = Field(default=None)
+    photo_url: Optional[str] = Field(default=None)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "display_name": "New Display Name",
+                "slug": "new-slug",
+                "photo_url": "https://example.com/photo.jpg"
+            }
+        }
+    }
 
 class UserProfile(UserProfileBase):
     id: Union[int, str, UUID]
