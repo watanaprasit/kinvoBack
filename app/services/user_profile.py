@@ -1,5 +1,5 @@
 from app.db.session import get_supabase
-from app.schemas.user import UserProfileCreate, UserProfileUpdate
+from app.schemas.user.profile import UserProfileCreate, UserProfileUpdate
 from typing import Optional, Dict, Any
 from fastapi import UploadFile
 import uuid

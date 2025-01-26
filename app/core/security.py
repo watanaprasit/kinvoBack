@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from app.db.session import get_supabase
 from app.core.config import settings
-from app.schemas.user import UserResponse
+from app.schemas.user.user import UserResponse
 
 # OAuth2 password bearer token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")

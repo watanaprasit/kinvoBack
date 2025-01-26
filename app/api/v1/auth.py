@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
-from ...schemas.user import UserCreate, UserLogin, Token, UserResponse, GoogleOAuthLogin
+# from ...schemas.user import UserCreate, UserLogin, Token, UserResponse, GoogleOAuthLogin
+from ...schemas.user.user import UserCreate, UserLogin, UserResponse, GoogleOAuthLogin
+from ...schemas.user.base import Token
 from ...services.auth import AuthService, validate_google_oauth_token
 from ...core.config import settings
 from ...core.security import create_access_token, get_password_hash, verify_password

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
 from sqlalchemy.exc import IntegrityError
-from app.schemas.user import UserResponse, UserProfile, UserProfileCreate, UserProfileUpdate
+# from app.schemas.user.user import UserResponse, UserProfile, UserProfileCreate, UserProfileUpdate
+from app.schemas.user.profile import UserProfile, UserProfileCreate, UserProfileUpdate
+from app.schemas.user.user import UserResponse
 from app.services.user import UserService
 from app.core.security import get_current_user
 from app.services.user_profile import UserProfileService

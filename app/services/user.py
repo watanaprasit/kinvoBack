@@ -1,4 +1,3 @@
-# services/user.py
 from app.db.session import get_supabase
 import re
 from typing import Optional, Dict, Any
