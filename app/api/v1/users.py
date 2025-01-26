@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Body, Request
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Body, Request, Form
+from typing import Optional
 from sqlalchemy.exc import IntegrityError
 # from app.schemas.user.user import UserResponse, UserProfile, UserProfileCreate, UserProfileUpdate
 from app.schemas.user.profile import UserProfile, UserProfileCreate, UserProfileUpdate
@@ -59,13 +60,6 @@ async def get_user_profile(user_id: int):
         raise HTTPException(status_code=404, detail="User profile not found")
     return user_profile
 
-# With token request
-# @router.get("/me/profile", response_model=UserProfile)
-# async def get_user_profile(current_user=Depends(get_current_user)):
-#     user_profile = await UserProfileService.get_by_user_id(str(current_user.id))
-#     if not user_profile:
-#         raise HTTPException(status_code=404, detail="User profile not found")
-#     return user_profile
 
 @router.put("/me/profile", response_model=UserProfile)
 async def update_user_profile(
@@ -89,15 +83,27 @@ async def update_user_profile(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
+    
+    
+    
 @router.post("/profile", response_model=UserProfile)
-async def create_user_profile(profile_data: UserProfileCreate):
+async def create_user_profile(
+    user_id: int = Form(...),
+    display_name: str = Form(...),
+    slug: str = Form(...),
+    photo: Optional[UploadFile] = File(None)
+):
     try:
+        profile_data = UserProfileCreate(
+            user_id=user_id,
+            display_name=display_name,
+            slug=slug
+        )
+        
         user_profile = await UserProfileService.create_profile(
-            user_id=profile_data.user_id,  # Pass user_id from the input data
+            user_id=user_id,
             profile_data=profile_data,
-            profile_id=profile_data.id  # Optional: pass ID if provided
+            photo=photo
         )
         
         if not user_profile:
@@ -106,6 +112,35 @@ async def create_user_profile(profile_data: UserProfileCreate):
         return user_profile
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# @router.post("/profile", response_model=UserProfile)
+# async def create_user_profile(profile_data: UserProfileCreate):
+#     try:
+#         user_profile = await UserProfileService.create_profile(
+#             user_id=profile_data.user_id,  # Pass user_id from the input data
+#             profile_data=profile_data,
+#             profile_id=profile_data.id  # Optional: pass ID if provided
+#         )
+        
+#         if not user_profile:
+#             raise HTTPException(status_code=500, detail="Failed to create user profile")
+        
+#         return user_profile
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+# With token request
+# @router.get("/me/profile", response_model=UserProfile)
+# async def get_user_profile(current_user=Depends(get_current_user)):
+#     user_profile = await UserProfileService.get_by_user_id(str(current_user.id))
+#     if not user_profile:
+#         raise HTTPException(status_code=404, detail="User profile not found")
+#     return user_profile
+
 
 
 # with authentication

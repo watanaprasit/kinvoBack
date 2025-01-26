@@ -9,7 +9,6 @@ class UserProfileBase(BaseSlugModel):
     photo_url: Optional[str] = None
 
 class UserProfileCreate(BaseModel):
-    id: Optional[int] = None
     user_id: int
     display_name: str
     slug: str
