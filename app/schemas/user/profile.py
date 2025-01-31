@@ -15,9 +15,9 @@ class UserProfileCreate(BaseModel):
     photo_url: Optional[str] = None
 
 class UserProfileUpdate(BaseModel):
-    display_name: Optional[str] = Field(default=None)
-    slug: Optional[str] = Field(default=None)
-    photo_url: Optional[str] = Field(default=None)
+    display_name: Optional[str] = None
+    slug: Optional[str] = None
+    photo_url: Optional[str] = None
 
     model_config = {
         "json_schema_extra": {
@@ -29,9 +29,12 @@ class UserProfileUpdate(BaseModel):
         }
     }
 
-class UserProfile(UserProfileBase):
-    id: Union[int, str, UUID]
-    user_id: Union[int, str, UUID]
+class UserProfile(BaseModel):
+    id: int
+    user_id: int
+    display_name: str
+    slug: str
+    photo_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

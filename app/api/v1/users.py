@@ -63,22 +63,25 @@ async def get_user_profile(user_id: int):
 
 @router.put("/me/profile", response_model=UserProfile)
 async def update_user_profile(
-    request: Request,
+    display_name: str = Form(None),
+    slug: str = Form(None),
+    photo_url: str = Form(None),
     photo: UploadFile = File(None),
     current_user=Depends(get_current_user)
 ):
-    # Parse request body manually
-    body = await request.json()
-    profile_data = UserProfileUpdate(**body)
+    profile_data = UserProfileUpdate(
+        display_name=display_name,
+        slug=slug,
+        photo_url=photo_url
+    )
     
     try:
-        user_profile = await UserProfileService.update_profile(
+        return await UserProfileService.update_profile(
             user_id=str(current_user.id),
             profile_data=profile_data,
             photo=photo,
             current_user=current_user
         )
-        return user_profile
     except HTTPException as e:
         raise e
     except Exception as e:
