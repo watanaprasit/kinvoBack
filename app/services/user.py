@@ -5,6 +5,26 @@ from fastapi import HTTPException
 
 class UserService:
     @staticmethod
+    async def get_by_email(email: str):
+        try:
+            supabase = get_supabase()
+            response = (
+                supabase.table("users")
+                .select("*")
+                .eq("email", email)
+                .single()
+                .execute()
+            )
+            
+            if not response.data:
+                raise HTTPException(status_code=404, detail="User not found")
+                
+            return response.data
+        except Exception as e:
+            print(f"Error in get_by_email: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @staticmethod
     async def get_by_slug(slug: str) -> Optional[Dict[str, Any]]:
         supabase = get_supabase()
         result = supabase.table("users").select("*").eq("slug", slug).execute()
