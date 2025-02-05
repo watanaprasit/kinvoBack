@@ -4,46 +4,74 @@ from typing import Optional, Dict, Any
 from fastapi import UploadFile, HTTPException
 import uuid
 from datetime import datetime
+import io
 
 class UserProfileService:
     @staticmethod
     async def get_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
         supabase = get_supabase()
         response = supabase.table("user_profiles").select("*").eq("user_id", user_id).single().execute()
+        
+        if response.data and response.data.get('photo_url'):
+            # Get just the file path without query parameters
+            file_path = response.data['photo_url'].split('?')[0].split('/')[-1]
+            
+            # Get fresh public URL
+            public_url = supabase.storage.from_("user_profile_photos").get_public_url(file_path)
+            response.data['photo_url'] = public_url
+            
         return response.data
 
     @staticmethod
     async def _handle_photo_upload(user_id: int, photo: UploadFile) -> str:
-        contents = await photo.read()
-        unique_filename = f"{user_id}_{uuid.uuid4().hex}"
         try:
+            # Read file content
+            contents = await photo.read()
+            file_extension = photo.filename.split('.')[-1].lower()
+            
+            # Create user-specific folder path and filename
+            user_folder = str(user_id)
+            unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
+            full_path = f"{user_folder}/{unique_filename}"
+            
             supabase = get_supabase()
+            
+            # Delete existing photo if any
+            existing_profile = await UserProfileService.get_by_user_id(user_id)
+            if existing_profile and existing_profile.get('photo_url'):
+                old_file = existing_profile['photo_url'].split('/')[-1].split('?')[0]
+                old_path = f"{user_folder}/{old_file}"
+                try:
+                    supabase.storage.from_('user_profile_photos').remove(old_path)
+                except Exception as e:
+                    print(f"Warning: Failed to delete old photo: {str(e)}")
+            
+            # Upload new photo with user folder structure
             upload_response = supabase.storage.from_('user_profile_photos').upload(
+                path=full_path,  # Using the full path with user folder
                 file=contents,
-                path=unique_filename,
-                file_options={"content-type": photo.content_type}
+                file_options={
+                    "content-type": photo.content_type,
+                    "cache-control": "3600"
+                }
             )
             
             if hasattr(upload_response, 'error') and upload_response.error:
                 raise Exception(f"Upload failed: {upload_response.error}")
-                
-            # Get public URL
-            url = supabase.storage.from_('user_profile_photos').get_public_url(unique_filename)
-            if not url:
-                raise Exception("Failed to get public URL")
-                
-            return url
-        
+            
+            # Get public URL without query parameters
+            public_url = supabase.storage.from_('user_profile_photos').get_public_url(full_path)
+            
+            print(f"Successfully uploaded photo: {public_url}")
+            return public_url
+            
         except Exception as e:
-            print(f"Photo upload error: {str(e)}")  # Add logging
+            print(f"Photo upload error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Photo upload failed: {str(e)}")
 
     @staticmethod
     async def update_profile(user_id: str, profile_data: UserProfileUpdate, photo: UploadFile = None, current_user=None) -> Dict[str, Any]:
         supabase = get_supabase()
-        
-        print(f"Starting profile update for user {user_id}")
-        print(f"Received data: display_name={profile_data.display_name}, slug={profile_data.slug}")
         
         if not current_user:
             raise HTTPException(status_code=401, detail="Authentication required")
@@ -53,7 +81,6 @@ class UserProfileService:
             
             # Get existing profile
             existing_profile = await UserProfileService.get_by_user_id(user_id_int)
-            print(f"Existing profile: {existing_profile}")
             
             if not existing_profile:
                 raise HTTPException(status_code=404, detail="Profile not found")
@@ -61,15 +88,9 @@ class UserProfileService:
             # Handle photo upload if provided
             photo_url = None
             if photo:
-                print(f"Processing photo upload: {photo.filename}")
-                try:
-                    photo_url = await UserProfileService._handle_photo_upload(user_id_int, photo)
-                    print(f"Photo uploaded successfully: {photo_url}")
-                except Exception as e:
-                    print(f"Photo upload failed: {str(e)}")
-                    raise HTTPException(status_code=500, detail=f"Photo upload failed: {str(e)}")
+                photo_url = await UserProfileService._handle_photo_upload(user_id_int, photo)
             
-            # Prepare update data with explicit checks
+            # Prepare update data
             update_data = {}
             if profile_data.display_name is not None:
                 update_data['display_name'] = profile_data.display_name.strip()
@@ -78,35 +99,29 @@ class UserProfileService:
             if photo_url:
                 update_data['photo_url'] = photo_url
             
-            print(f"Update data prepared: {update_data}")
-            
             if not update_data:
-                print("No updates requested")
                 return existing_profile
             
-            # Perform the update with explicit error handling
-            try:
-                result = (
-                    supabase.table("user_profiles")
-                    .update(update_data)
-                    .eq("user_id", user_id_int)
-                    .execute()
-                )
-                print(f"Update result: {result.data}")
-                
-                if not result.data:
-                    print("Update returned no data")
-                    check_profile = await UserProfileService.get_by_user_id(user_id_int)
-                    if check_profile:
-                        return check_profile
-                    raise HTTPException(status_code=404, detail="Profile not found during update")
-                
-                return result.data[0]
-                
-            except Exception as e:
-                print(f"Supabase update error: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Database update failed: {str(e)}")
-                
+            # Update the profile
+            result = (
+                supabase.table("user_profiles")
+                .update(update_data)
+                .eq("user_id", user_id_int)
+                .execute()
+            )
+            
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            
+            updated_profile = result.data[0]
+            
+            # Ensure photo_url is a fresh public URL
+            if updated_profile.get('photo_url'):
+                file_path = updated_profile['photo_url'].split('?')[0].split('/')[-1]
+                updated_profile['photo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
+            
+            return updated_profile
+            
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"Invalid user ID format: {str(e)}")
         except Exception as e:
