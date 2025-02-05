@@ -126,21 +126,35 @@ async def get_user_profile(user_id: int):
         raise HTTPException(status_code=404, detail="User profile not found")
     return user_profile
 
+
 @router.put("/me/profile", response_model=UserProfile)
 async def update_user_profile(
-    display_name: str = Form(None),
-    slug: str = Form(None),
-    photo_url: str = Form(None),
-    photo: UploadFile = File(None),
-    current_user=Depends(get_current_user)
+    display_name: Optional[str] = Form(None),
+    slug: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+    current_user: UserResponse = Depends(get_current_user)
 ):
-    profile_data = UserProfileUpdate(
-        display_name=display_name,
-        slug=slug,
-        photo_url=photo_url
-    )
-    
     try:
+        # Validate inputs
+        if display_name is not None and not display_name.strip():
+            raise HTTPException(status_code=400, detail="Display name cannot be empty")
+        if slug is not None and not slug.strip():
+            raise HTTPException(status_code=400, detail="Slug cannot be empty")
+        
+        # Check slug availability before proceeding
+        if slug:
+            slug_available = await UserService.check_slug_availability(slug)
+            if not slug_available:
+                raise HTTPException(status_code=400, detail="Slug is already taken")
+            
+        # Create profile update data
+        profile_data = UserProfileUpdate(
+            display_name=display_name,
+            slug=slug,
+            photo_url=None
+        )
+        
+        # Update profile first
         updated_profile = await UserProfileService.update_profile(
             user_id=str(current_user.id),
             profile_data=profile_data,
@@ -148,15 +162,19 @@ async def update_user_profile(
             current_user=current_user
         )
         
-        # Update user slug if provided
-        if slug:
+        # If profile update succeeds, update the slug
+        if slug and updated_profile:
             await UserService.update_slug(current_user.id, slug)
-            
+        
         return updated_profile
+        
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update profile: {str(e)}"
+        )
 
 @router.post("/profile", response_model=UserProfile)
 async def create_user_profile(
