@@ -3,8 +3,6 @@ from app.schemas.user.profile import UserProfileCreate, UserProfileUpdate
 from typing import Optional, Dict, Any
 from fastapi import UploadFile, HTTPException
 import uuid
-from datetime import datetime
-import io
 
 class UserProfileService:
     @staticmethod
@@ -13,10 +11,12 @@ class UserProfileService:
         response = supabase.table("user_profiles").select("*").eq("user_id", user_id).single().execute()
         
         if response.data and response.data.get('photo_url'):
-            # Get just the file path without query parameters
-            file_path = response.data['photo_url'].split('?')[0].split('/')[-1]
+            # Construct the full path including user folder
+            user_folder = str(user_id)
+            filename = response.data['photo_url'].split('/')[-1].split('?')[0]
+            file_path = f"{user_folder}/{filename}"
             
-            # Get fresh public URL
+            # Get fresh public URL with the full path
             public_url = supabase.storage.from_("user_profile_photos").get_public_url(file_path)
             response.data['photo_url'] = public_url
             
@@ -39,8 +39,9 @@ class UserProfileService:
             # Delete existing photo if any
             existing_profile = await UserProfileService.get_by_user_id(user_id)
             if existing_profile and existing_profile.get('photo_url'):
-                old_file = existing_profile['photo_url'].split('/')[-1].split('?')[0]
-                old_path = f"{user_folder}/{old_file}"
+                # Extract filename only from the URL
+                old_filename = existing_profile['photo_url'].split('/')[-1].split('?')[0]
+                old_path = f"{user_folder}/{old_filename}"
                 try:
                     supabase.storage.from_('user_profile_photos').remove(old_path)
                 except Exception as e:
@@ -59,7 +60,7 @@ class UserProfileService:
             if hasattr(upload_response, 'error') and upload_response.error:
                 raise Exception(f"Upload failed: {upload_response.error}")
             
-            # Get public URL without query parameters
+            # Get public URL with the full path
             public_url = supabase.storage.from_('user_profile_photos').get_public_url(full_path)
             
             print(f"Successfully uploaded photo: {public_url}")
@@ -117,7 +118,12 @@ class UserProfileService:
             
             # Ensure photo_url is a fresh public URL
             if updated_profile.get('photo_url'):
-                file_path = updated_profile['photo_url'].split('?')[0].split('/')[-1]
+                # Construct the full path including user folder
+                user_folder = str(user_id_int)
+                filename = updated_profile['photo_url'].split('/')[-1].split('?')[0]
+                file_path = f"{user_folder}/{filename}"
+                
+                # Get fresh public URL with the full path
                 updated_profile['photo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
             
             return updated_profile
@@ -143,7 +149,7 @@ class UserProfileService:
 
         try:
             # Insert a new record, let the database handle the auto-incrementing id
-            result = await supabase.table("user_profiles").insert({
+            result = supabase.table("user_profiles").insert({
                 "user_id": user_id,
                 "display_name": profile_data.display_name,
                 "slug": profile_data.slug,
@@ -151,6 +157,14 @@ class UserProfileService:
             }, returning="*").execute()
             
             if result.data:
+                # If we have a photo_url in the result, make sure it's fresh
+                if result.data[0].get('photo_url') and not photo_url:
+                    # Handle existing photo_url if it wasn't just uploaded
+                    user_folder = str(user_id)
+                    filename = result.data[0]['photo_url'].split('/')[-1].split('?')[0]
+                    file_path = f"{user_folder}/{filename}"
+                    result.data[0]['photo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
+                
                 return result.data[0]
             else:
                 raise HTTPException(status_code=500, detail="Failed to create user profile")
