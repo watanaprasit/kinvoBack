@@ -6,6 +6,13 @@ import uuid
 
 class UserProfileService:
     @staticmethod
+    def _clean_url(url: str) -> str:
+        """Clean the URL by removing empty query parameters."""
+        if url.endswith('?'):
+            return url[:-1]
+        return url
+    
+    @staticmethod
     async def get_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
         supabase = get_supabase()
         response = supabase.table("user_profiles").select("*").eq("user_id", user_id).single().execute()
@@ -90,13 +97,34 @@ class UserProfileService:
             photo_url = None
             if photo:
                 photo_url = await UserProfileService._handle_photo_upload(user_id_int, photo)
-            
+                
             # Prepare update data
             update_data = {}
             if profile_data.display_name is not None:
                 update_data['display_name'] = profile_data.display_name.strip()
+                
+            # Handle slug validation separately
             if profile_data.slug is not None:
-                update_data['slug'] = profile_data.slug.strip()
+                clean_slug = profile_data.slug.strip()
+                
+                # Check if slug is unchanged from the user's existing slug
+                if existing_profile.get('slug') != clean_slug:
+                    # Only check availability if the slug is different from current
+                    slug_check = (
+                        supabase.table("user_profiles")
+                        .select("user_id")
+                        .eq("slug", clean_slug)
+                        .neq("user_id", user_id_int)  # Directly check for OTHER users
+                        .execute()
+                    )
+                    
+                    # If any other users have this slug, it's taken
+                    if slug_check.data and len(slug_check.data) > 0:
+                        raise HTTPException(status_code=400, detail="Slug is already taken")
+                
+                # If we reach here, the slug is either unchanged or available
+                update_data['slug'] = clean_slug
+                
             if photo_url:
                 update_data['photo_url'] = photo_url
             
@@ -130,6 +158,9 @@ class UserProfileService:
             
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"Invalid user ID format: {str(e)}")
+        except HTTPException:
+            # Re-raise HTTP exceptions without modification
+            raise
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
@@ -141,6 +172,18 @@ class UserProfileService:
         photo: Optional[UploadFile] = None
     ) -> Dict[str, Any]:
         supabase = get_supabase()
+        
+        # Check if slug is already taken by another user
+        if profile_data.slug:
+            slug_check = (
+                supabase.table("user_profiles")
+                .select("user_id")
+                .eq("slug", profile_data.slug)
+                .execute()
+            )
+            
+            if slug_check.data and len(slug_check.data) > 0:
+                raise HTTPException(status_code=400, detail="Slug is already taken")
         
         # Handle photo upload if provided
         photo_url = None
