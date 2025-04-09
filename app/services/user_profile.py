@@ -103,27 +103,30 @@ class UserProfileService:
             if profile_data.display_name is not None:
                 update_data['display_name'] = profile_data.display_name.strip()
                 
-            # Handle slug validation separately
+        # In update_profile method
             if profile_data.slug is not None:
                 clean_slug = profile_data.slug.strip()
                 
                 # Check if slug is unchanged from the user's existing slug
                 if existing_profile.get('slug') != clean_slug:
                     # Only check availability if the slug is different from current
-                    slug_check = (
-                        supabase.table("user_profiles")
-                        .select("user_id")
-                        .eq("slug", clean_slug)
-                        .neq("user_id", user_id_int)  # Directly check for OTHER users
-                        .execute()
-                    )
+                    slug_check = supabase.table("user_profiles").select("user_id").eq("slug", clean_slug).execute()
                     
-                    # If any other users have this slug, it's taken
-                    if slug_check.data and len(slug_check.data) > 0:
-                        raise HTTPException(status_code=400, detail="Slug is already taken")
+                    # If the slug exists and belongs to a different user, it's taken
+                    if slug_check.data and any(item.get('user_id') != user_id_int for item in slug_check.data):
+                                                   
+                        print(f"Existing slug: '{existing_profile.get('slug')}'")
+                        print(f"New slug: '{clean_slug}'")
+                        print(f"Are they different? {existing_profile.get('slug') != clean_slug}")
+                   
+                        raise HTTPException(
+                            status_code=400, 
+                            detail="Slug is already taken. Please choose a different one."
+                        )
                 
                 # If we reach here, the slug is either unchanged or available
                 update_data['slug'] = clean_slug
+
                 
             if photo_url:
                 update_data['photo_url'] = photo_url
@@ -172,18 +175,6 @@ class UserProfileService:
         photo: Optional[UploadFile] = None
     ) -> Dict[str, Any]:
         supabase = get_supabase()
-        
-        # Check if slug is already taken by another user
-        if profile_data.slug:
-            slug_check = (
-                supabase.table("user_profiles")
-                .select("user_id")
-                .eq("slug", profile_data.slug)
-                .execute()
-            )
-            
-            if slug_check.data and len(slug_check.data) > 0:
-                raise HTTPException(status_code=400, detail="Slug is already taken")
         
         # Handle photo upload if provided
         photo_url = None

@@ -135,19 +135,17 @@ async def update_user_profile(
         # Validate inputs
         if display_name is not None and not display_name.strip():
             raise HTTPException(status_code=400, detail="Display name cannot be empty")
-        if slug is not None and not slug.strip():
-            raise HTTPException(status_code=400, detail="Slug cannot be empty")
         
-        # Check slug availability before proceeding
-        if slug:
+        # Only check slug availability if slug is provided and not empty
+        if slug is not None and slug.strip():
             slug_available = await UserService.check_slug_availability(slug)
             if not slug_available:
                 raise HTTPException(status_code=400, detail="Slug is already taken")
             
-        # Create profile update data
+        # Create profile update data with only the fields that are provided
         profile_data = UserProfileUpdate(
-            display_name=display_name,
-            slug=slug,
+            display_name=display_name if display_name is not None else None,
+            slug=slug if slug is not None and slug.strip() else None,
             photo_url=None
         )
         
@@ -159,8 +157,8 @@ async def update_user_profile(
             current_user=current_user
         )
         
-        # If profile update succeeds, update the slug
-        if slug and updated_profile:
+        # If profile update succeeds and slug is provided, update the slug
+        if slug is not None and slug.strip() and updated_profile:
             await UserService.update_slug(current_user.id, slug)
         
         return updated_profile
@@ -200,3 +198,35 @@ async def create_user_profile(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Add this to your FastAPI router file
+
+@router.put("/me/display-name", response_model=UserProfile)
+async def update_display_name(
+    display_name: str = Form(...),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    try:
+        # Create profile update data with ONLY display_name
+        profile_data = UserProfileUpdate(
+            display_name=display_name,
+            slug=None,  # Explicitly set to None
+            photo_url=None
+        )
+        
+        # Update profile with only the display name
+        updated_profile = await UserProfileService.update_profile(
+            user_id=str(current_user.id),
+            profile_data=profile_data,
+            photo=None,
+            current_user=current_user
+        )
+        
+        return updated_profile
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update display name: {str(e)}"
+        )
