@@ -3,6 +3,7 @@ from app.schemas.user.profile import UserProfileCreate, UserProfileUpdate
 from typing import Optional, Dict, Any
 from fastapi import UploadFile, HTTPException
 import uuid
+import re
 
 class UserProfileService:
     @staticmethod
@@ -46,13 +47,25 @@ class UserProfileService:
             # Delete existing photo if any
             existing_profile = await UserProfileService.get_by_user_id(user_id)
             if existing_profile and existing_profile.get('photo_url'):
-                # Extract filename only from the URL
-                old_filename = existing_profile['photo_url'].split('/')[-1].split('?')[0]
-                old_path = f"{user_folder}/{old_filename}"
                 try:
+                    # Parse the URL to extract just the filename
+                    old_url = existing_profile['photo_url']
+                    old_filename = old_url.split('/')[-1]
+                    
+                    # Remove query parameters if any
+                    if '?' in old_filename:
+                        old_filename = old_filename.split('?')[0]
+                    
+                    old_path = f"{user_folder}/{old_filename}"
+                    print(f"Attempting to delete old photo at path: {old_path}")
+                    
+                    # Attempt to delete the old file
                     supabase.storage.from_('user_profile_photos').remove(old_path)
+                    print(f"Successfully deleted old photo")
                 except Exception as e:
                     print(f"Warning: Failed to delete old photo: {str(e)}")
+            
+            # Create the user folder if it doesn't exist (Supabase handles this automatically)
             
             # Upload new photo with user folder structure
             upload_response = supabase.storage.from_('user_profile_photos').upload(
@@ -76,6 +89,7 @@ class UserProfileService:
         except Exception as e:
             print(f"Photo upload error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Photo upload failed: {str(e)}")
+
 
     @staticmethod
     async def update_profile(user_id: str, profile_data: UserProfileUpdate, photo: UploadFile = None, current_user=None) -> Dict[str, Any]:
@@ -103,31 +117,31 @@ class UserProfileService:
             if profile_data.display_name is not None:
                 update_data['display_name'] = profile_data.display_name.strip()
                 
-        # In update_profile method
             if profile_data.slug is not None:
                 clean_slug = profile_data.slug.strip()
                 
-                # Check if slug is unchanged from the user's existing slug
-                if existing_profile.get('slug') != clean_slug:
-                    # Only check availability if the slug is different from current
-                    slug_check = supabase.table("user_profiles").select("user_id").eq("slug", clean_slug).execute()
-                    
-                    # If the slug exists and belongs to a different user, it's taken
-                    if slug_check.data and any(item.get('user_id') != user_id_int for item in slug_check.data):
-                                                   
-                        print(f"Existing slug: '{existing_profile.get('slug')}'")
-                        print(f"New slug: '{clean_slug}'")
-                        print(f"Are they different? {existing_profile.get('slug') != clean_slug}")
-                   
+                # Only proceed with slug validation if it's not empty
+                if clean_slug:
+                    import re
+                    # Validate slug format - only allow alphanumeric and hyphens
+                    if not re.match(r'^[a-zA-Z0-9-]+$', clean_slug):
                         raise HTTPException(
                             status_code=400, 
-                            detail="Slug is already taken. Please choose a different one."
+                            detail="Slug can only contain letters, numbers, and hyphens."
                         )
-                
-                # If we reach here, the slug is either unchanged or available
-                update_data['slug'] = clean_slug
+                    
+                    # Check if slug is unchanged from the user's existing slug
+                    if existing_profile.get('slug') != clean_slug:
+                        slug_check = supabase.table("user_profiles").select("user_id").eq("slug", clean_slug).execute()
 
+                        if slug_check.data and any(item.get('user_id') != user_id_int for item in slug_check.data):
+                            raise HTTPException(
+                                status_code=400, 
+                                detail="Slug is already taken. Please choose a different one."
+                            )
                 
+                    update_data['slug'] = clean_slug
+
             if photo_url:
                 update_data['photo_url'] = photo_url
             
