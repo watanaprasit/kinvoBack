@@ -128,6 +128,8 @@ async def get_user_profile(user_id: int):
 async def update_user_profile(
     display_name: Optional[str] = Form(None),
     slug: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    bio: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
     current_user: UserResponse = Depends(get_current_user)
 ):
@@ -146,6 +148,8 @@ async def update_user_profile(
         profile_data = UserProfileUpdate(
             display_name=display_name if display_name is not None else None,
             slug=slug if slug is not None and slug.strip() else None,
+            title=title if title is not None else None,
+            bio=bio if bio is not None else None,
             photo_url=None
         )
         
@@ -176,13 +180,19 @@ async def create_user_profile(
     user_id: int = Form(...),
     display_name: str = Form(...),
     slug: str = Form(...),
+    title: Optional[str] = Form(None),
+    bio: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None)
 ):
     try:
+        slug = slug.lower() if slug else None
+        
         profile_data = UserProfileCreate(
             user_id=user_id,
             display_name=display_name,
-            slug=slug
+            slug=slug,
+            title=title,
+            bio=bio
         )
         
         user_profile = await UserProfileService.create_profile(
