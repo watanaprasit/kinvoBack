@@ -96,6 +96,15 @@ async def update_user_slug(
     current_user = Depends(get_current_user)
 ):
     try:
+        # Validate slug
+        slug = slug.strip().lower()
+        
+        if len(slug) > 20:
+            raise HTTPException(status_code=400, detail="Slug must be 20 characters or less")
+            
+        if ' ' in slug:
+            raise HTTPException(status_code=400, detail="Slug cannot contain spaces")
+            
         updated_user = await UserService.update_slug(current_user.id, slug)
         if not updated_user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -111,6 +120,15 @@ async def update_user_slug(
 @router.get("/check-slug/{slug}")
 async def check_slug_availability(slug: str):
     try:
+        # Validate slug format before checking availability
+        slug = slug.strip().lower()
+        
+        if len(slug) > 20:
+            return {"available": False, "error": "Slug must be 20 characters or less"}
+            
+        if ' ' in slug:
+            return {"available": False, "error": "Slug cannot contain spaces"}
+            
         is_available = await UserService.check_slug_availability(slug)
         return {"available": is_available}
     except Exception as e:
@@ -135,14 +153,32 @@ async def update_user_profile(
 ):
     try:
         # Validate inputs
-        if display_name is not None and not display_name.strip():
-            raise HTTPException(status_code=400, detail="Display name cannot be empty")
+        if display_name is not None:
+            if not display_name.strip():
+                raise HTTPException(status_code=400, detail="Display name cannot be empty")
+            if len(display_name.strip()) > 30:
+                raise HTTPException(status_code=400, detail="Display name must be 30 characters or less")
         
-        # Only check slug availability if slug is provided and not empty
+        # Validate slug
         if slug is not None and slug.strip():
+            slug = slug.strip().lower()
+            
+            if len(slug) > 20:
+                raise HTTPException(status_code=400, detail="Slug must be 20 characters or less")
+                
+            if ' ' in slug:
+                raise HTTPException(status_code=400, detail="Slug cannot contain spaces")
+                
             slug_available = await UserService.check_slug_availability(slug)
             if not slug_available:
                 raise HTTPException(status_code=400, detail="Slug is already taken")
+                
+        # Validate title
+        if title is not None and len(title.strip()) > 40:
+            raise HTTPException(status_code=400, detail="Title must be 40 characters or less")
+        
+        if bio is not None and len(bio.strip()) > 200:
+            raise HTTPException(status_code=400, detail="Bio must be 200 characters or less")
             
         # Create profile update data with only the fields that are provided
         profile_data = UserProfileUpdate(
@@ -185,7 +221,28 @@ async def create_user_profile(
     photo: Optional[UploadFile] = File(None)
 ):
     try:
-        slug = slug.lower() if slug else None
+        # Validate display_name
+        if len(display_name.strip()) > 30:
+            raise HTTPException(status_code=400, detail="Display name must be 30 characters or less")
+            
+        # Process and validate slug
+        slug = slug.strip().lower() if slug else None
+        
+        if not slug:
+            raise HTTPException(status_code=400, detail="Slug is required")
+            
+        if len(slug) > 20:
+            raise HTTPException(status_code=400, detail="Slug must be 20 characters or less")
+            
+        if ' ' in slug:
+            raise HTTPException(status_code=400, detail="Slug cannot contain spaces")
+        
+        # Validate title
+        if title and len(title.strip()) > 40:
+            raise HTTPException(status_code=400, detail="Title must be 40 characters or less")
+        
+        if bio and len(bio.strip()) > 200:
+            raise HTTPException(status_code=400, detail="Bio must be 200 characters or less")
         
         profile_data = UserProfileCreate(
             user_id=user_id,
@@ -208,19 +265,26 @@ async def create_user_profile(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Add this to your FastAPI router file
-
 @router.put("/me/display-name", response_model=UserProfile)
 async def update_display_name(
     display_name: str = Form(...),
     current_user: UserResponse = Depends(get_current_user)
 ):
     try:
+        # Validate display name
+        if not display_name.strip():
+            raise HTTPException(status_code=400, detail="Display name cannot be empty")
+            
+        if len(display_name.strip()) > 30:
+            raise HTTPException(status_code=400, detail="Display name must be 30 characters or less")
+        
         # Create profile update data with ONLY display_name
         profile_data = UserProfileUpdate(
             display_name=display_name,
             slug=None,  # Explicitly set to None
-            photo_url=None
+            photo_url=None,
+            title=None,
+            bio=None
         )
         
         # Update profile with only the display name

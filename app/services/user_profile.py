@@ -100,17 +100,34 @@ class UserProfileService:
                 
             update_data = {}
             if profile_data.display_name is not None:
-                update_data['display_name'] = profile_data.display_name.strip()
+                display_name = profile_data.display_name.strip()
+                if len(display_name) > 30:
+                    raise HTTPException(status_code=400, detail="Display name must be 30 characters or less")
+                update_data['display_name'] = display_name
                 
             if profile_data.slug is not None:
-                clean_slug = profile_data.slug.strip()
+                clean_slug = profile_data.slug.strip().lower()
                 
                 if clean_slug:
-                    import re
+                    # Check for spaces
+                    if ' ' in clean_slug:
+                        raise HTTPException(
+                            status_code=400, 
+                            detail="Slug cannot contain spaces"
+                        )
+                        
+                    # Check character limit
+                    if len(clean_slug) > 20:
+                        raise HTTPException(
+                            status_code=400, 
+                            detail="Slug must be 20 characters or less"
+                        )
+                        
+                    # Check valid characters
                     if not re.match(r'^[a-zA-Z0-9-]+$', clean_slug):
                         raise HTTPException(
                             status_code=400, 
-                            detail="Slug can only contain letters, numbers, and hyphens."
+                            detail="Slug can only contain letters, numbers, and hyphens"
                         )
                     
                     # Check if slug is unchanged from the user's existing slug
@@ -125,13 +142,19 @@ class UserProfileService:
                 
                     update_data['slug'] = clean_slug
                     
-                    # Handle new title field
+            # Handle title field
             if profile_data.title is not None:
-                update_data['title'] = profile_data.title.strip()
+                title = profile_data.title.strip()
+                if len(title) > 40:
+                    raise HTTPException(status_code=400, detail="Title must be 40 characters or less")
+                update_data['title'] = title
                 
-            # Handle new bio field
+            # Handle bio field
             if profile_data.bio is not None:
-                update_data['bio'] = profile_data.bio.strip()
+                bio = profile_data.bio.strip()
+                if len(bio) > 200:
+                    raise HTTPException(status_code=400, detail="Bio must be 200 characters or less")
+                update_data['bio'] = bio
 
             if photo_url:
                 update_data['photo_url'] = photo_url
@@ -176,6 +199,35 @@ class UserProfileService:
     ) -> Dict[str, Any]:
         supabase = get_supabase()
         
+        # Validate display name
+        if profile_data.display_name and len(profile_data.display_name.strip()) > 30:
+            raise HTTPException(status_code=400, detail="Display name must be 30 characters or less")
+            
+        # Validate and clean slug
+        if profile_data.slug:
+            clean_slug = profile_data.slug.strip().lower()
+            
+            # Check for spaces
+            if ' ' in clean_slug:
+                raise HTTPException(status_code=400, detail="Slug cannot contain spaces")
+                
+            # Check character limit
+            if len(clean_slug) > 20:
+                raise HTTPException(status_code=400, detail="Slug must be 20 characters or less")
+                
+            # Validate slug format
+            if not re.match(r'^[a-zA-Z0-9-]+$', clean_slug):
+                raise HTTPException(status_code=400, detail="Slug can only contain letters, numbers, and hyphens")
+                
+            profile_data.slug = clean_slug
+        
+        # Validate title
+        if profile_data.title and len(profile_data.title.strip()) > 40:
+            raise HTTPException(status_code=400, detail="Title must be 40 characters or less")
+        
+        if profile_data.bio and len(profile_data.bio.strip()) > 200:
+            raise HTTPException(status_code=400, detail="Bio must be 200 characters or less")
+        
         photo_url = None
         if photo:
             photo_url = await UserProfileService._handle_photo_upload(user_id, photo)
@@ -183,11 +235,11 @@ class UserProfileService:
         try:
             result = supabase.table("user_profiles").insert({
                 "user_id": user_id,
-                "display_name": profile_data.display_name,
+                "display_name": profile_data.display_name.strip(),
                 "slug": profile_data.slug,
                 "photo_url": photo_url or profile_data.photo_url,
-                "title": profile_data.title,
-                "bio": profile_data.bio
+                "title": profile_data.title.strip() if profile_data.title else None,
+                "bio": profile_data.bio.strip() if profile_data.bio else None
             }, returning="*").execute()
             
             if result.data:
