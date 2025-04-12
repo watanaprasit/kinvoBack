@@ -149,6 +149,7 @@ async def update_user_profile(
     title: Optional[str] = Form(None),
     bio: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
+    company_logo: Optional[UploadFile] = File(None),  # New parameter
     current_user: UserResponse = Depends(get_current_user)
 ):
     try:
@@ -186,7 +187,9 @@ async def update_user_profile(
             slug=slug if slug is not None and slug.strip() else None,
             title=title if title is not None else None,
             bio=bio if bio is not None else None,
-            photo_url=None
+            photo_url=None,
+            company_logo_url=None  # Add this field
+
         )
         
         # Update profile first
@@ -194,6 +197,7 @@ async def update_user_profile(
             user_id=str(current_user.id),
             profile_data=profile_data,
             photo=photo,
+            company_logo=company_logo,  # Pass the company logo
             current_user=current_user
         )
         
@@ -218,7 +222,8 @@ async def create_user_profile(
     slug: str = Form(...),
     title: Optional[str] = Form(None),
     bio: Optional[str] = Form(None),
-    photo: Optional[UploadFile] = File(None)
+    photo: Optional[UploadFile] = File(None),
+    company_logo: Optional[UploadFile] = File(None)  # New parameter
 ):
     try:
         # Validate display_name
@@ -255,7 +260,9 @@ async def create_user_profile(
         user_profile = await UserProfileService.create_profile(
             user_id=user_id,
             profile_data=profile_data,
-            photo=photo
+            photo=photo,
+            company_logo=company_logo  # Pass the company logo
+
         )
         
         if not user_profile:

@@ -80,7 +80,7 @@ class UserProfileService:
 
 
     @staticmethod
-    async def update_profile(user_id: str, profile_data: UserProfileUpdate, photo: UploadFile = None, current_user=None) -> Dict[str, Any]:
+    async def update_profile(user_id: str, profile_data: UserProfileUpdate, photo: UploadFile = None, company_logo: UploadFile = None, current_user=None) -> Dict[str, Any]:
         supabase = get_supabase()
         
         if not current_user:
@@ -97,6 +97,10 @@ class UserProfileService:
             photo_url = None
             if photo:
                 photo_url = await UserProfileService._handle_photo_upload(user_id_int, photo)
+                
+            company_logo_url = None
+            if company_logo:
+                company_logo_url = await UserProfileService._handle_logo_upload(user_id_int, company_logo)
                 
             update_data = {}
             if profile_data.display_name is not None:
@@ -158,6 +162,9 @@ class UserProfileService:
 
             if photo_url:
                 update_data['photo_url'] = photo_url
+                
+            if company_logo_url:
+                update_data['company_logo_url'] = company_logo_url
             
             if not update_data:
                 return existing_profile
@@ -195,7 +202,8 @@ class UserProfileService:
     async def create_profile(
         user_id: int, 
         profile_data: UserProfileCreate, 
-        photo: Optional[UploadFile] = None
+        photo: Optional[UploadFile] = None,
+        company_logo: Optional[UploadFile] = None
     ) -> Dict[str, Any]:
         supabase = get_supabase()
         
@@ -231,6 +239,11 @@ class UserProfileService:
         photo_url = None
         if photo:
             photo_url = await UserProfileService._handle_photo_upload(user_id, photo)
+            
+        company_logo_url = None
+        if company_logo:
+            company_logo_url = await UserProfileService._handle_logo_upload(user_id, company_logo)
+
 
         try:
             result = supabase.table("user_profiles").insert({
@@ -238,21 +251,95 @@ class UserProfileService:
                 "display_name": profile_data.display_name.strip(),
                 "slug": profile_data.slug,
                 "photo_url": photo_url or profile_data.photo_url,
+                "company_logo_url": company_logo_url or profile_data.company_logo_url if hasattr(profile_data, 'company_logo_url') else None,
                 "title": profile_data.title.strip() if profile_data.title else None,
                 "bio": profile_data.bio.strip() if profile_data.bio else None
             }, returning="*").execute()
             
             if result.data:
-                if result.data[0].get('photo_url') and not photo_url:
-                    user_folder = str(user_id)
-                    filename = result.data[0]['photo_url'].split('/')[-1].split('?')[0]
-                    file_path = f"{user_folder}/{filename}"
-                    result.data[0]['photo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
+                profile_data = result.data[0]
                 
-                return result.data[0]
-            else:
-                raise HTTPException(status_code=500, detail="Failed to create user profile")
+                # Format photo URL if it exists
+                if profile_data.get('photo_url') and not photo_url:
+                    user_folder = str(user_id)
+                    filename = profile_data['photo_url'].split('/')[-1].split('?')[0]
+                    file_path = f"{user_folder}/{filename}"
+                    profile_data['photo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
+                
+                # Format company logo URL if it exists
+                if profile_data.get('company_logo_url') and not company_logo_url:
+                    user_folder = f"{user_id}/company_logos"
+                    filename = profile_data['company_logo_url'].split('/')[-1].split('?')[0]
+                    file_path = f"{user_folder}/{filename}"
+                    profile_data['company_logo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to create user profile")
         
         except Exception as e:
             print(f"Insertion error: {e}")
             raise
+        
+        
+        
+    @staticmethod
+    async def _handle_logo_upload(user_id: int, logo: UploadFile) -> str:
+        try:
+            contents = await logo.read()
+            file_extension = logo.filename.split('.')[-1].lower()
+            
+            # Create a subfolder for company logos
+            user_folder = f"{user_id}/company_logos"
+            unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
+            full_path = f"{user_folder}/{unique_filename}"
+            
+            supabase = get_supabase()
+            
+            existing_profile = await UserProfileService.get_by_user_id(user_id)
+            if existing_profile and existing_profile.get('company_logo_url'):
+                try:
+                    old_url = existing_profile['company_logo_url']
+                    old_filename = old_url.split('/')[-1]
+                    
+                    if '?' in old_filename:
+                        old_filename = old_filename.split('?')[0]
+                    
+                    old_path = f"{user_folder}/{old_filename}"
+                    print(f"Attempting to delete old company logo at path: {old_path}")
+                    
+                    supabase.storage.from_('user_profile_photos').remove(old_path)
+                    print(f"Successfully deleted old company logo")
+                except Exception as e:
+                    print(f"Warning: Failed to delete old company logo: {str(e)}")
+            
+            # Ensure the folder exists
+            try:
+                supabase.storage.from_('user_profile_photos').list(user_folder)
+            except Exception:
+                # If folder doesn't exist, create it by uploading a placeholder
+                placeholder_path = f"{user_folder}/.placeholder"
+                supabase.storage.from_('user_profile_photos').upload(
+                    path=placeholder_path,
+                    file=b"",
+                    file_options={"content-type": "application/octet-stream"}
+                )
+            
+            upload_response = supabase.storage.from_('user_profile_photos').upload(
+                path=full_path,  
+                file=contents,
+                file_options={
+                    "content-type": logo.content_type,
+                    "cache-control": "3600"
+                }
+            )
+            
+            if hasattr(upload_response, 'error') and upload_response.error:
+                raise Exception(f"Upload failed: {upload_response.error}")
+            
+            public_url = supabase.storage.from_('user_profile_photos').get_public_url(full_path)
+            
+            print(f"Successfully uploaded company logo: {public_url}")
+            return public_url
+            
+        except Exception as e:
+            print(f"Company logo upload error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Company logo upload failed: {str(e)}")
