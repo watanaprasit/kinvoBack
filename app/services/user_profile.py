@@ -160,6 +160,18 @@ class UserProfileService:
                     raise HTTPException(status_code=400, detail="Bio must be 200 characters or less")
                 update_data['bio'] = bio
 
+            # Handle new fields
+            if profile_data.email is not None:
+                # Email validation is handled by Pydantic
+                update_data['email'] = profile_data.email
+                
+            if profile_data.website is not None:
+                # URL validation is handled by Pydantic
+                update_data['website'] = str(profile_data.website)
+                
+            if profile_data.contact is not None:
+                update_data['contact'] = profile_data.contact
+
             if photo_url:
                 update_data['photo_url'] = photo_url
                 
@@ -246,15 +258,21 @@ class UserProfileService:
 
 
         try:
-            result = supabase.table("user_profiles").insert({
+            insert_data = {
                 "user_id": user_id,
                 "display_name": profile_data.display_name.strip(),
                 "slug": profile_data.slug,
                 "photo_url": photo_url or profile_data.photo_url,
                 "company_logo_url": company_logo_url or profile_data.company_logo_url if hasattr(profile_data, 'company_logo_url') else None,
                 "title": profile_data.title.strip() if profile_data.title else None,
-                "bio": profile_data.bio.strip() if profile_data.bio else None
-            }, returning="*").execute()
+                "bio": profile_data.bio.strip() if profile_data.bio else None,
+                # Add new fields
+                "email": profile_data.email,
+                "website": str(profile_data.website) if profile_data.website else None,
+                "contact": profile_data.contact
+            }
+            
+            result = supabase.table("user_profiles").insert(insert_data, returning="*").execute()
             
             if result.data:
                 profile_data = result.data[0]
@@ -278,8 +296,6 @@ class UserProfileService:
         except Exception as e:
             print(f"Insertion error: {e}")
             raise
-        
-        
         
     @staticmethod
     async def _handle_logo_upload(user_id: int, logo: UploadFile) -> str:

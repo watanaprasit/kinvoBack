@@ -1,31 +1,40 @@
-from pydantic import BaseModel, Field
-from typing import Optional, Union
+from pydantic import BaseModel, Field, EmailStr, HttpUrl
+from typing import Optional, Union, Dict, Any
 from datetime import datetime
 from .base import BaseSlugModel
 
 class UserProfileBase(BaseSlugModel):
     display_name: Optional[str] = None
     photo_url: Optional[str] = None
-    company_logo_url: Optional[str] = None  # New field
+    company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
+    email: Optional[EmailStr] = None  # New field
+    website: Optional[HttpUrl] = None  # New field
+    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
 
 class UserProfileCreate(BaseModel):
     user_id: int
     display_name: str
     slug: str
     photo_url: Optional[str] = None
-    company_logo_url: Optional[str] = None  # New field
+    company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
+    email: Optional[EmailStr] = None  # New field
+    website: Optional[HttpUrl] = None  # New field
+    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
 
 class UserProfileUpdate(BaseModel):
     display_name: Optional[str] = None
     slug: Optional[str] = None
     photo_url: Optional[str] = None
-    company_logo_url: Optional[str] = None  # New field
+    company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
+    email: Optional[EmailStr] = None  # New field
+    website: Optional[HttpUrl] = None  # New field
+    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
     
     model_config = {
         "json_schema_extra": {
@@ -33,9 +42,16 @@ class UserProfileUpdate(BaseModel):
                 "display_name": "New Display Name",
                 "slug": "new-slug",
                 "photo_url": "https://example.com/photo.jpg",
-                "company_logo_url": "https://example.com/company_logo.png",  # Add example
+                "company_logo_url": "https://example.com/company_logo.png",
                 "title": "Software Developer",
-                "bio": "I'm a passionate developer with over 5 years of experience."
+                "bio": "I'm a passionate developer with over 5 years of experience.",
+                "email": "user@example.com",
+                "website": "https://example.com",
+                "contact": {
+                    "twitter": "@username",
+                    "linkedin": "linkedin/username",
+                    "phone": "+1234567890"
+                }
             }
         }
     }
@@ -46,9 +62,12 @@ class UserProfile(BaseModel):
     display_name: str
     slug: str
     photo_url: Optional[str] = None
-    company_logo_url: Optional[str] = None  # New field
+    company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
+    email: Optional[EmailStr] = None  # New field
+    website: Optional[HttpUrl] = None  # New field
+    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
     created_at: datetime
     updated_at: datetime
     
