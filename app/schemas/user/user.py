@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from .base import BaseSlugModel
 
@@ -33,3 +33,14 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        
+        
+class UserPublicProfileResponse(BaseModel):
+    display_name: str
+    slug: str
+    title: Optional[str] = None
+    bio: Optional[str] = None
+    photo_url: Optional[str] = None
+    company_logo_url: Optional[str] = None
+    website: Optional[str] = None
+    contact: Optional[Dict[str, Any]] = None

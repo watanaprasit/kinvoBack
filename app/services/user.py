@@ -2,6 +2,7 @@ from app.db.session import get_supabase
 import re
 from typing import Optional, Dict, Any
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 class UserService:
     @staticmethod
@@ -70,3 +71,18 @@ class UserService:
             raise HTTPException(status_code=401, detail="User not found")
         
         return result.data
+    
+class UserPublicProfileResponse(BaseModel):
+    display_name: str
+    slug: str
+    title: Optional[str] = None
+    bio: Optional[str] = None
+    photo_url: Optional[str] = None
+    company_logo_url: Optional[str] = None
+    website: Optional[str] = None
+    contact: Optional[Dict[str, Any]] = None
+
+class UserPublicResponse(BaseModel):
+    full_name: str
+    slug: str
+    profile: UserPublicProfileResponse
