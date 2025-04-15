@@ -49,29 +49,6 @@ async def get_user_by_email(email: str = Query(...)):
         print(f"Error in get_user_by_email: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{slug}", response_model=UserResponse)
-async def get_user_by_slug(slug: str):
-    try:
-        user = await UserService.get_by_slug(slug)
-        
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Get user profile data
-        profile = await UserProfileService.get_by_user_id(user["id"])
-        
-        return {
-            "id": user["id"],
-            "email": user["email"],
-            "full_name": user["full_name"],
-            "slug": user["slug"],
-            "created_at": user["created_at"],
-            "updated_at": user["updated_at"],
-            "google_id": None,
-            "profile": profile  # Include profile data in response
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_data(current_user = Depends(get_current_user)):
@@ -425,3 +402,28 @@ async def get_user_by_slug(slug: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+# @router.get("/{slug}", response_model=UserResponse)
+# async def get_user_by_slug(slug: str):
+#     try:
+#         user = await UserService.get_by_slug(slug)
+        
+#         if not user:
+#             raise HTTPException(status_code=404, detail="User not found")
+        
+#         # Get user profile data
+#         profile = await UserProfileService.get_by_user_id(user["id"])
+        
+#         return {
+#             "id": user["id"],
+#             "email": user["email"],
+#             "full_name": user["full_name"],
+#             "slug": user["slug"],
+#             "created_at": user["created_at"],
+#             "updated_at": user["updated_at"],
+#             "google_id": None,
+#             "profile": profile  # Include profile data in response
+#         }
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
