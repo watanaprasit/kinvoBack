@@ -4,6 +4,10 @@ from typing import Optional, Dict, Any
 from fastapi import UploadFile, HTTPException
 import uuid
 import re
+import qrcode
+from io import BytesIO
+import base64
+import json
 
 class UserProfileService:
     @staticmethod
@@ -80,7 +84,7 @@ class UserProfileService:
 
 
     @staticmethod
-    async def update_profile(user_id: str, profile_data: UserProfileUpdate, photo: UploadFile = None, company_logo: UploadFile = None, current_user=None) -> Dict[str, Any]:
+    async def update_profile(user_id: str, profile_data: UserProfileUpdate, photo: UploadFile = None, company_logo: UploadFile = None, current_user=None, base_url: str = None) -> Dict[str, Any]:
         supabase = get_supabase()
         
         if not current_user:
@@ -108,7 +112,8 @@ class UserProfileService:
                 if len(display_name) > 30:
                     raise HTTPException(status_code=400, detail="Display name must be 30 characters or less")
                 update_data['display_name'] = display_name
-                
+            
+            # Handle slug update separately from display_name
             if profile_data.slug is not None:
                 clean_slug = profile_data.slug.strip().lower()
                 
@@ -146,6 +151,14 @@ class UserProfileService:
                 
                     update_data['slug'] = clean_slug
                     
+                    # Always update QR code data when slug changes
+                    if clean_slug != existing_profile.get('slug'):
+                        # Default base URL if not provided
+                        if not base_url:
+                            base_url = "https://yourdomain.com/profile"
+                        
+                        update_data['qr_code_url'] = UserProfileService.generate_qr_code_url(clean_slug, base_url)
+            
             # Handle title field
             if profile_data.title is not None:
                 title = profile_data.title.strip()
@@ -171,6 +184,10 @@ class UserProfileService:
                 
             if profile_data.contact is not None:
                 update_data['contact'] = profile_data.contact
+                
+            # Handle explicit QR code data update
+            if hasattr(profile_data, 'qr_code_url') and profile_data.qr_code_url is not None:
+                update_data['qr_code_url'] = profile_data.qr_code_url
 
             if photo_url:
                 update_data['photo_url'] = photo_url
@@ -256,6 +273,7 @@ class UserProfileService:
         if company_logo:
             company_logo_url = await UserProfileService._handle_logo_upload(user_id, company_logo)
 
+        qr_code_url = UserProfileService.generate_qr_code_url(profile_data.slug)
 
         try:
             insert_data = {
@@ -266,10 +284,11 @@ class UserProfileService:
                 "company_logo_url": company_logo_url or profile_data.company_logo_url if hasattr(profile_data, 'company_logo_url') else None,
                 "title": profile_data.title.strip() if profile_data.title else None,
                 "bio": profile_data.bio.strip() if profile_data.bio else None,
-                # Add new fields
                 "email": profile_data.email,
                 "website": str(profile_data.website) if profile_data.website else None,
-                "contact": profile_data.contact
+                "contact": profile_data.contact,
+                "qr_code_url": qr_code_url  # Add QR code data
+
             }
             
             result = supabase.table("user_profiles").insert(insert_data, returning="*").execute()
@@ -359,3 +378,46 @@ class UserProfileService:
         except Exception as e:
             print(f"Company logo upload error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Company logo upload failed: {str(e)}")
+        
+    @staticmethod
+    def generate_qr_code_url(user_slug: str, base_url: Optional[str] = None) -> str:
+        """Generate QR code data for a user's profile page"""
+        # Default base URL if not provided
+        if not base_url:
+            base_url = "https://yourdomain.com/profile"
+        
+        # Create the URL for the user's profile
+        profile_url = f"{base_url}/{user_slug}"
+        
+        return profile_url
+        
+    @staticmethod
+    def generate_qr_code_image(data: str) -> str:
+        """Generate QR code image and return as base64 string"""
+        try:
+            # Create QR code instance
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            
+            # Add data to QR code
+            qr.add_data(data)
+            qr.make(fit=True)
+            
+            # Create an image from the QR Code
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            # Save image to BytesIO buffer
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            
+            # Convert to base64
+            img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            
+            return f"data:image/png;base64,{img_str}"
+        except Exception as e:
+            print(f"QR code generation error: {str(e)}")
+            return None

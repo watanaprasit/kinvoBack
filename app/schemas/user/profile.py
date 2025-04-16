@@ -9,9 +9,10 @@ class UserProfileBase(BaseSlugModel):
     company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
-    email: Optional[EmailStr] = None  # New field
-    website: Optional[HttpUrl] = None  # New field
-    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
+    email: Optional[EmailStr] = None
+    website: Optional[HttpUrl] = None
+    contact: Optional[Dict[str, Any]] = None
+    qr_code_data: Optional[str] = None  # New field
 
 class UserProfileCreate(BaseModel):
     user_id: int
@@ -21,9 +22,10 @@ class UserProfileCreate(BaseModel):
     company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
-    email: Optional[EmailStr] = None  # New field
-    website: Optional[HttpUrl] = None  # New field
-    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
+    email: Optional[EmailStr] = None
+    website: Optional[HttpUrl] = None
+    contact: Optional[Dict[str, Any]] = None
+    qr_code_data: Optional[str] = None  # New field
 
 class UserProfileUpdate(BaseModel):
     display_name: Optional[str] = None
@@ -32,9 +34,10 @@ class UserProfileUpdate(BaseModel):
     company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
-    email: Optional[EmailStr] = None  # New field
-    website: Optional[HttpUrl] = None  # New field
-    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
+    email: Optional[EmailStr] = None
+    website: Optional[HttpUrl] = None
+    contact: Optional[Dict[str, Any]] = None
+    qr_code_data: Optional[str] = None  # New field
     
     model_config = {
         "json_schema_extra": {
@@ -51,7 +54,8 @@ class UserProfileUpdate(BaseModel):
                     "twitter": "@username",
                     "linkedin": "linkedin/username",
                     "phone": "+1234567890"
-                }
+                },
+                "qr_code_data": "https://example.com/user/new-slug"
             }
         }
     }
@@ -65,9 +69,10 @@ class UserProfile(BaseModel):
     company_logo_url: Optional[str] = None
     title: Optional[str] = None
     bio: Optional[str] = None
-    email: Optional[EmailStr] = None  # New field
-    website: Optional[HttpUrl] = None  # New field
-    contact: Optional[Dict[str, Any]] = None  # New field - JSONB
+    email: Optional[EmailStr] = None
+    website: Optional[HttpUrl] = None
+    contact: Optional[Dict[str, Any]] = None
+    qr_code_data: Optional[str] = None  # New field
     created_at: datetime
     updated_at: datetime
     

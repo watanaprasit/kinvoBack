@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Form, Query
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Form, Query, Body
 from typing import Optional, Dict, Any
 from sqlalchemy.exc import IntegrityError
 from pydantic import EmailStr, HttpUrl
@@ -127,9 +127,10 @@ async def update_user_profile(
     slug: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     bio: Optional[str] = Form(None),
-    email: Optional[str] = Form(None),  # New field
-    website: Optional[str] = Form(None),  # New field
-    contact: Optional[str] = Form(None),  # New field as Form data
+    email: Optional[str] = Form(None),
+    website: Optional[str] = Form(None),
+    contact: Optional[str] = Form(None),
+    base_url: Optional[str] = Form(None),  # Add this parameter
     photo: Optional[UploadFile] = File(None),
     company_logo: Optional[UploadFile] = File(None),
     current_user: UserResponse = Depends(get_current_user)
@@ -190,7 +191,8 @@ async def update_user_profile(
             profile_data=profile_data,
             photo=photo,
             company_logo=company_logo,
-            current_user=current_user
+            current_user=current_user,
+            base_url=base_url  # Pass the base_url
         )
         
         # If profile update succeeds and slug is provided, update the slug
@@ -402,28 +404,70 @@ async def get_user_by_slug(slug: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-    
-# @router.get("/{slug}", response_model=UserResponse)
-# async def get_user_by_slug(slug: str):
-#     try:
-#         user = await UserService.get_by_slug(slug)
+
+@router.get("/me/qrcode", response_model=Dict[str, str])
+async def get_qr_code(
+    base_url: Optional[str] = Query(None),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    try:
+        # Get user profile
+        user_profile = await UserProfileService.get_by_user_id(current_user.id)
         
-#         if not user:
-#             raise HTTPException(status_code=404, detail="User not found")
+        if not user_profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
         
-#         # Get user profile data
-#         profile = await UserProfileService.get_by_user_id(user["id"])
+        # Get QR code data
+        qr_data = user_profile.get('qr_code_url')
         
-#         return {
-#             "id": user["id"],
-#             "email": user["email"],
-#             "full_name": user["full_name"],
-#             "slug": user["slug"],
-#             "created_at": user["created_at"],
-#             "updated_at": user["updated_at"],
-#             "google_id": None,
-#             "profile": profile  # Include profile data in response
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+        # If no QR code data exists, generate it
+        if not qr_data:
+            qr_data = UserProfileService.generate_qr_code_url(user_profile['slug'], base_url)
+            
+            # Update the profile with the new QR code data
+            update_data = UserProfileUpdate(qr_code_url=qr_data)
+            await UserProfileService.update_profile(
+                user_id=str(current_user.id),
+                profile_data=update_data,
+                current_user=current_user
+            )
+        
+        # Generate QR code image
+        qr_image = UserProfileService.generate_qr_code_image(qr_data)
+        
+        return {
+            "qr_data": qr_data,
+            "qr_image": qr_image
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate QR code: {str(e)}")
+
+@router.put("/me/qrcode", response_model=Dict[str, str])
+async def update_qr_code(
+    qr_data: str = Body(..., embed=True),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    try:
+        # Get user profile
+        user_profile = await UserProfileService.get_by_user_id(current_user.id)
+        
+        if not user_profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        # Update profile with custom QR code data
+        update_data = UserProfileUpdate(qr_code_url=qr_data)
+        updated_profile = await UserProfileService.update_profile(
+            user_id=str(current_user.id),
+            profile_data=update_data,
+            current_user=current_user
+        )
+        
+        # Generate QR code image
+        qr_image = UserProfileService.generate_qr_code_image(qr_data)
+        
+        return {
+            "qr_data": qr_data,
+            "qr_image": qr_image
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update QR code: {str(e)}")
