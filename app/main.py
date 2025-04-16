@@ -7,12 +7,11 @@ from fastapi import Request
 from .services.user import UserService
 from .services.user_profile import UserProfileService
 import re
+import qrcode
+import base64
+from io import BytesIO
 
 app = FastAPI(title=settings.PROJECT_NAME)
-
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to Kinvo Backend!"}
 
 # Configure CORS
 app.add_middleware(
@@ -22,6 +21,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to Kinvo Backend!"}
 
 # Include the routes for authentication
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
@@ -112,6 +115,46 @@ async def get_profile_api(slug: str):
     except Exception as e:
         print(f"Error fetching profile by slug: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# Add a public QR code endpoint
+@app.get("/api/v1/profiles/{slug}/qrcode", tags=["profiles"])
+async def get_public_qrcode(slug: str, base_url: str = "http://localhost:5173/"):
+    try:
+        # Get user by slug
+        user = await UserService.get_by_slug(slug)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Generate QR code for the profile URL
+        profile_url = f"{base_url.rstrip('/')}/{slug}"
+        
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(profile_url)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to base64
+        buffered = BytesIO()
+        img.save(buffered)
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        return {
+            "qr_data": profile_url,
+            "qr_image": f"data:image/png;base64,{img_str}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error generating QR code: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error generating QR code")
 
 if __name__ == "__main__":
     import uvicorn
