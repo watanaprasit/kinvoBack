@@ -78,7 +78,13 @@ async def get_public_profile_by_slug(slug: str):
         print(f"Error fetching profile by slug: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
     
-# In your FastAPI main.py
+# Add this to your main.py
+@app.get("/api/v1/profiles/dashboard", tags=["profiles"])
+async def get_profiles_dashboard():
+    # Your dashboard logic here
+    return {"data": "Your dashboard data"}
+
+
 @app.get("/api/v1/profiles/{slug}", tags=["profiles"])
 async def get_profile_api(slug: str):
     # Reuse your existing logic from the /{slug} endpoint
