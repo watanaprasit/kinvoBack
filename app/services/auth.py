@@ -98,6 +98,34 @@ class AuthService:
                 raise HTTPException(status_code=400, detail="Failed to create user profile")
 
             user = result.data[0]
+            
+            # Create the user profile in user_profiles table
+            from app.schemas.user.profile import UserProfileCreate
+            from app.services.user_profile import UserProfileService
+            
+            try:
+                # Create basic profile with minimal info
+                profile_data = UserProfileCreate(
+                    display_name=token_data.get("name", ""),
+                    slug=slug,
+                    title="",
+                    bio="",
+                    email=email,
+                    website=None,
+                    contact=None
+                )
+                
+                # Create the profile
+                await UserProfileService.create_profile(
+                    user_id=user["id"],
+                    profile_data=profile_data
+                )
+            except Exception as e:
+                # Log the error but don't fail the signup
+                print(f"Error creating user profile: {str(e)}")
+                # Could also delete the user here to maintain data consistency
+            
+            # Always return a response regardless of profile creation success/failure
             access_token = create_access_token(data={"sub": email})
 
             return {

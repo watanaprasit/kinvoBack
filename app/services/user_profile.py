@@ -309,12 +309,37 @@ class UserProfileService:
                     filename = profile_data['company_logo_url'].split('/')[-1].split('?')[0]
                     file_path = f"{user_folder}/{filename}"
                     profile_data['company_logo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
-                else:
-                    raise HTTPException(status_code=500, detail="Failed to create user profile")
+                
+                return profile_data
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create user profile")
         
         except Exception as e:
-            print(f"Insertion error: {e}")
-            raise
+            try:
+                # Create basic profile with minimal info
+                profile_data = UserProfileCreate(
+                    display_name=token_data.get("name", ""),
+                    slug=slug,
+                    title="",
+                    bio="",
+                    email=email,
+                    website=None,
+                    contact=None
+                )
+                
+                # Create the profile
+                profile_result = await UserProfileService.create_profile(
+                    user_id=user["id"],
+                    profile_data=profile_data
+                )
+                print(f"Profile created successfully: {profile_result}")
+            except Exception as e:
+                # Log the detailed error
+                print(f"Error creating user profile: {str(e)}")
+                print(f"Error type: {type(e)}")
+                import traceback
+                traceback.print_exc()
+                # Could also delete the user here to maintain data consistency
         
     @staticmethod
     async def _handle_logo_upload(user_id: int, logo: UploadFile) -> str:
