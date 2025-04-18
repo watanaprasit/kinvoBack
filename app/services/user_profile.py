@@ -22,15 +22,27 @@ class UserProfileService:
         supabase = get_supabase()
         response = supabase.table("user_profiles").select("*").eq("user_id", user_id).single().execute()
         
-        if response.data and response.data.get('photo_url'):
+        # First check if response.data exists at all
+        if not response.data:
+            return None
+        
+        # Make a copy of the data to avoid modifying the original response
+        profile_data = dict(response.data)
+        
+        # Handle photo URL if it exists
+        if profile_data.get('photo_url'):
             user_folder = str(user_id)
-            filename = response.data['photo_url'].split('/')[-1].split('?')[0]
+            filename = profile_data['photo_url'].split('/')[-1].split('?')[0]
             file_path = f"{user_folder}/{filename}"
             
             public_url = supabase.storage.from_("user_profile_photos").get_public_url(file_path)
-            response.data['photo_url'] = public_url
-            
-        return response.data
+            profile_data['photo_url'] = public_url
+        
+        # Ensure id field exists
+        if 'id' not in profile_data or profile_data['id'] is None:
+            profile_data['id'] = user_id  # Using user_id as a fallback
+        
+        return profile_data
 
     @staticmethod
     async def _handle_photo_upload(user_id: int, photo: UploadFile) -> str:

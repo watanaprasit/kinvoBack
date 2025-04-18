@@ -61,7 +61,7 @@ class UserProfileUpdate(BaseModel):
     }
 
 class UserProfile(BaseModel):
-    id: int
+    id: Optional[int] = None
     user_id: int
     display_name: str
     slug: str
