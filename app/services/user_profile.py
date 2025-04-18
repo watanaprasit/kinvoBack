@@ -236,6 +236,9 @@ class UserProfileService:
     ) -> Dict[str, Any]:
         supabase = get_supabase()
         
+        if profile_data.user_id != user_id:
+            profile_data.user_id = user_id
+        
         # Validate display name
         if profile_data.display_name and len(profile_data.display_name.strip()) > 30:
             raise HTTPException(status_code=400, detail="Display name must be 30 characters or less")
@@ -273,73 +276,80 @@ class UserProfileService:
         if company_logo:
             company_logo_url = await UserProfileService._handle_logo_upload(user_id, company_logo)
 
-        qr_code_url = UserProfileService.generate_qr_code_url(profile_data.slug)
+        # Generate QR code URL for the profile
+        profile_url = UserProfileService.generate_qr_code_url(profile_data.slug)
 
+        # Create the profile
+        insert_data = {
+            "user_id": user_id,
+            "display_name": profile_data.display_name.strip() if profile_data.display_name else "",
+            "slug": profile_data.slug,
+            "photo_url": photo_url or profile_data.photo_url if hasattr(profile_data, 'photo_url') else None,
+            "company_logo_url": company_logo_url or profile_data.company_logo_url if hasattr(profile_data, 'company_logo_url') else None,
+            "title": profile_data.title.strip() if profile_data.title else None,
+            "bio": profile_data.bio.strip() if profile_data.bio else None,
+            "email": profile_data.email,
+            "website": str(profile_data.website) if profile_data.website else None,
+            "contact": profile_data.contact,
+            "qr_code_url": profile_url  # Use the consistent field name for the database
+        }
+        
+        # Debug info - print data being inserted
+        print(f"Attempting to insert user profile with data: {json.dumps(insert_data, default=str)}")
+        
         try:
-            insert_data = {
-                "user_id": user_id,
-                "display_name": profile_data.display_name.strip(),
-                "slug": profile_data.slug,
-                "photo_url": photo_url or profile_data.photo_url,
-                "company_logo_url": company_logo_url or profile_data.company_logo_url if hasattr(profile_data, 'company_logo_url') else None,
-                "title": profile_data.title.strip() if profile_data.title else None,
-                "bio": profile_data.bio.strip() if profile_data.bio else None,
-                "email": profile_data.email,
-                "website": str(profile_data.website) if profile_data.website else None,
-                "contact": profile_data.contact,
-                "qr_code_url": qr_code_url  # Add QR code data
-
-            }
-            
+            # First attempt the insert
             result = supabase.table("user_profiles").insert(insert_data, returning="*").execute()
             
-            if result.data:
+            # Check if we have data in the response
+            if hasattr(result, 'data') and result.data:
                 profile_data = result.data[0]
-                
-                # Format photo URL if it exists
-                if profile_data.get('photo_url') and not photo_url:
-                    user_folder = str(user_id)
-                    filename = profile_data['photo_url'].split('/')[-1].split('?')[0]
-                    file_path = f"{user_folder}/{filename}"
-                    profile_data['photo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
-                
-                # Format company logo URL if it exists
-                if profile_data.get('company_logo_url') and not company_logo_url:
-                    user_folder = f"{user_id}/company_logos"
-                    filename = profile_data['company_logo_url'].split('/')[-1].split('?')[0]
-                    file_path = f"{user_folder}/{filename}"
-                    profile_data['company_logo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
-                
-                return profile_data
             else:
-                raise HTTPException(status_code=500, detail="Failed to create user profile")
+                # If not, immediately fetch the profile we just created
+                fetch_result = supabase.table("user_profiles").select("*").eq("user_id", user_id).execute()
+                
+                if not fetch_result.data:
+                    raise Exception("Failed to create or retrieve user profile")
+                    
+                profile_data = fetch_result.data[0]
+            
+            # Format photo URL if it exists
+            if profile_data.get('photo_url') and not photo_url:
+                user_folder = str(user_id)
+                filename = profile_data['photo_url'].split('/')[-1].split('?')[0]
+                file_path = f"{user_folder}/{filename}"
+                profile_data['photo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
+            
+            # Format company logo URL if it exists
+            if profile_data.get('company_logo_url') and not company_logo_url:
+                user_folder = f"{user_id}/company_logos"
+                filename = profile_data['company_logo_url'].split('/')[-1].split('?')[0]
+                file_path = f"{user_folder}/{filename}"
+                profile_data['company_logo_url'] = supabase.storage.from_('user_profile_photos').get_public_url(file_path)
+            
+            return profile_data
         
         except Exception as e:
+            print(f"Error creating user profile: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Check if the profile was created despite the error
             try:
-                # Create basic profile with minimal info
-                profile_data = UserProfileCreate(
-                    display_name=token_data.get("name", ""),
-                    slug=slug,
-                    title="",
-                    bio="",
-                    email=email,
-                    website=None,
-                    contact=None
-                )
+                existing_profile = supabase.table("user_profiles").select("*").eq("user_id", user_id).execute()
                 
-                # Create the profile
-                profile_result = await UserProfileService.create_profile(
-                    user_id=user["id"],
-                    profile_data=profile_data
-                )
-                print(f"Profile created successfully: {profile_result}")
-            except Exception as e:
-                # Log the detailed error
-                print(f"Error creating user profile: {str(e)}")
-                print(f"Error type: {type(e)}")
-                import traceback
-                traceback.print_exc()
-                # Could also delete the user here to maintain data consistency
+                if existing_profile.data:
+                    # If we found a profile, it means the creation succeeded but the response was empty
+                    print("Profile was created but response was empty, returning existing profile")
+                    return existing_profile.data[0]
+                else:
+                    # Clean up just in case
+                    supabase.table("user_profiles").delete().eq("user_id", user_id).execute()
+            except Exception as cleanup_error:
+                print(f"Failed to check/clean up profile: {str(cleanup_error)}")
+                    
+            raise HTTPException(status_code=500, detail=f"Profile creation failed: {str(e)}")
+
         
     @staticmethod
     async def _handle_logo_upload(user_id: int, logo: UploadFile) -> str:

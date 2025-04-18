@@ -95,7 +95,7 @@ class AuthService:
             result = supabase.table("users").insert(new_user).execute()
             
             if not result.data:
-                raise HTTPException(status_code=400, detail="Failed to create user profile")
+                raise HTTPException(status_code=400, detail="Failed to create user record")
 
             user = result.data[0]
             
@@ -106,6 +106,7 @@ class AuthService:
             try:
                 # Create basic profile with minimal info
                 profile_data = UserProfileCreate(
+                    user_id=user["id"],  # Include the user_id here
                     display_name=token_data.get("name", ""),
                     slug=slug,
                     title="",
@@ -116,16 +117,28 @@ class AuthService:
                 )
                 
                 # Create the profile
-                await UserProfileService.create_profile(
-                    user_id=user["id"],
+                profile_result = await UserProfileService.create_profile(
+                    user_id=user["id"],  # This is redundant but maintains compatibility
                     profile_data=profile_data
                 )
             except Exception as e:
-                # Log the error but don't fail the signup
-                print(f"Error creating user profile: {str(e)}")
-                # Could also delete the user here to maintain data consistency
+                # Log the error and propagate it with a meaningful message
+                import traceback
+                traceback_str = traceback.format_exc()
+                print(f"Error creating user profile: {str(e)}\n{traceback_str}")
+                
+                # Delete the user to maintain consistency
+                try:
+                    supabase.table("users").delete().eq("id", user["id"]).execute()
+                except Exception as delete_error:
+                    print(f"Failed to clean up user after profile creation error: {str(delete_error)}")
+                    
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Registration failed: Error creating user profile: {str(e)}"
+                )
             
-            # Always return a response regardless of profile creation success/failure
+            # Generate access token
             access_token = create_access_token(data={"sub": email})
 
             return {
