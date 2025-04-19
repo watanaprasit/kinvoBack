@@ -471,3 +471,38 @@ async def update_qr_code(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update QR code: {str(e)}")
+    
+@router.get("/{slug}/qrcode", response_model=Dict[str, str])
+async def get_public_qr_code(
+    slug: str,
+    base_url: Optional[str] = Query(None)
+):
+    try:
+        # Get user by slug
+        user = await UserService.get_by_slug(slug)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get user profile
+        user_profile = await UserProfileService.get_by_user_id(user["id"])
+        
+        if not user_profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        # Get QR code data
+        qr_data = user_profile.get('qr_code_url')
+        
+        # If no QR code data exists, generate it
+        if not qr_data:
+            qr_data = UserProfileService.generate_qr_code_url(user_profile['slug'], base_url)
+        
+        # Generate QR code image
+        qr_image = UserProfileService.generate_qr_code_image(qr_data)
+        
+        return {
+            "qr_data": qr_data,
+            "qr_image": qr_image
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate QR code: {str(e)}")
