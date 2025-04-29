@@ -91,12 +91,13 @@
     
 # new below
 
-from app.db.session import get_supabase
 import re
 from typing import Optional, Dict, Any, List
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from app.db.session import get_supabase
+from app.services.business_card import BusinessCardService 
 class SubscriptionTier:
     FREE = "free"
     PRO = "pro"
@@ -125,25 +126,20 @@ class UserService:
     
     @staticmethod
     async def get_by_slug(slug: str) -> Optional[Dict[str, Any]]:
+        """Get a user by slug"""
         supabase = get_supabase()
         result = supabase.table("users").select("*").eq("slug", slug).execute()
         return result.data[0] if result.data else None
 
     @staticmethod
     async def check_slug_availability(slug: str) -> bool:
-        supabase = get_supabase()
-        
-        # Check users table
-        users_result = supabase.table("users").select("id").eq("slug", slug).execute()
-        if len(users_result.data) > 0:
-            return False
-            
-        # Check business_cards table
-        cards_result = supabase.table("business_cards").select("id").eq("slug", slug).execute()
-        return len(cards_result.data) == 0
+        """Check if a slug is available in both users and business_cards tables"""
+        result = await BusinessCardService.check_slug_availability(slug)
+        return result["available"]
 
     @staticmethod
     async def update_slug(user_id: str, slug: str) -> Optional[Dict[str, Any]]:
+        """Update a user's slug"""
         # Validate slug format
         if not re.match(r'^[a-z0-9-]+$', slug):
             raise ValueError("Invalid slug format")
@@ -163,12 +159,14 @@ class UserService:
     
     @staticmethod
     def get_user_by_id(user_id: str):
+        """Get a user by ID"""
         supabase = get_supabase()
-        result = supabase.from_("users").select("*").eq("id", user_id).execute()
+        result = supabase.table("users").select("*").eq("id", user_id).execute()
         return result.data[0] if result.data else None
     
     @staticmethod
     async def get_current_user_by_token(token: str) -> Dict[str, Any]:
+        """Get the current user by token"""
         supabase = get_supabase()
         result = supabase.table("users").select("*").eq("email", token).single().execute()
         
@@ -223,30 +221,14 @@ class UserService:
     @staticmethod
     async def get_business_cards(user_id: str) -> List[Dict[str, Any]]:
         """Get all business cards for a user"""
-        supabase = get_supabase()
-        result = supabase.table("business_cards")\
-            .select("*")\
-            .eq("user_id", user_id)\
-            .order("is_primary", desc=True)\
-            .order("created_at", desc=True)\
-            .execute()
-            
-        return result.data
+        return await BusinessCardService.get_by_user_id(user_id)
     
     @staticmethod
     async def get_primary_business_card(user_id: str) -> Optional[Dict[str, Any]]:
         """Get the user's primary business card"""
-        supabase = get_supabase()
-        result = supabase.table("business_cards")\
-            .select("*")\
-            .eq("user_id", user_id)\
-            .eq("is_primary", True)\
-            .single()\
-            .execute()
-            
-        return result.data if result.data else None
+        return await BusinessCardService.get_primary_by_user_id(user_id)
 
-
+# Response models
 class UserPublicProfileResponse(BaseModel):
     display_name: str
     slug: str
