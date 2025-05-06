@@ -571,3 +571,85 @@ async def get_public_qr_code(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate QR code: {str(e)}")
+    
+    
+# Fix for the FastAPI routes to properly handle slug lookups
+# Replace the current implementation of get_user_by_slug with this improved version
+
+@router.get("/{slug}", response_model=UserResponse)
+async def get_user_by_slug(slug: str):
+    try:
+        # Add logging to debug the issue
+        print(f"Looking up slug: {slug}")
+        
+        # First try to find a user with this slug
+        user = await UserService.get_by_slug(slug)
+        
+        if user:
+            # User found - get their primary business card
+            print(f"User found with slug: {slug}, user_id: {user['id']}")
+            business_card = await BusinessCardService.get_primary_by_user_id(user["id"])
+            
+            # Return user data with their business card
+            return {
+                "id": user["id"],
+                "email": user["email"],
+                "full_name": user["full_name"],
+                "slug": user["slug"],
+                "created_at": user["created_at"],
+                "updated_at": user["updated_at"],
+                "google_id": None,
+                "business_card": business_card
+            }
+        
+        # If no user found, try to find a business card with this slug
+        print(f"No user found with slug: {slug}, checking business cards")
+        business_card = await BusinessCardService.get_by_slug(slug)
+        
+        if not business_card:
+            print(f"No business card found with slug: {slug}")
+            raise HTTPException(status_code=404, detail="User or business card not found")
+        
+        # Business card found - get the associated user
+        print(f"Business card found with slug: {slug}, user_id: {business_card['user_id']}")
+        user_id = business_card["user_id"]
+        user = await UserService.get_user_by_id(user_id)
+        
+        if not user:
+            print(f"User not found for business card user_id: {user_id}")
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Found both the business card and its owner - return the data
+        return {
+            "id": user["id"],
+            "email": user["email"],
+            "full_name": user["full_name"],
+            "slug": user["slug"],
+            "created_at": user["created_at"],
+            "updated_at": user["updated_at"],
+            "google_id": None,
+            "business_card": business_card
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_user_by_slug: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
+# Also fix the business card specific endpoint to be more robust
+@router.get("/business-card/{slug}", response_model=BusinessCard)
+async def get_business_card_by_slug(slug: str):
+    try:
+        print(f"Looking up business card with slug: {slug}")
+        business_card = await BusinessCardService.get_by_slug(slug)
+        
+        if not business_card:
+            print(f"No business card found with slug: {slug}")
+            raise HTTPException(status_code=404, detail="Business card not found")
+            
+        return business_card
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_business_card_by_slug: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
